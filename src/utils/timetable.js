@@ -2,7 +2,7 @@
 // Maps recurring lesson definitions onto specific calendar days.
 // Supports both single-week and two-week timetable rotations.
 
-import { getDayOfWeek, timeToMinutes, getWeekNumber } from './dateHelpers';
+import { getDayOfWeek, timeToMinutes, getWeekNumber, getMonday, formatDateISO } from './dateHelpers';
 
 /**
  * Given the full timetable data and an array of 5 week-day Dates,
@@ -217,4 +217,88 @@ export function validateTimetableJSON(data) {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Generate a storage key for a lesson instance.
+ * Format: "classId::YYYY-MM-DD" e.g. "12G2::2026-02-09"
+ */
+export function lessonInstanceKey(classId, date) {
+  const dateStr = typeof date === 'string' ? date : formatDateISO(date);
+  return `${classId}::${dateStr}`;
+}
+
+/**
+ * Generate concrete future lesson dates for a given class.
+ * Projects the recurring timetable forward from today for `weeksAhead` weeks.
+ * Returns merged lessons (half-periods combined) with actual dates.
+ *
+ * @param {string} classId
+ * @param {object} timetableData
+ * @param {number} weeksAhead - how many weeks to project (default 20 = ~half a term)
+ * @returns {Array} sorted array of { date, dayName, startTime, endTime, period, room, key }
+ */
+export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
+  if (!timetableData?.recurringLessons) return [];
+
+  const isTwoWeek = !!timetableData.twoWeekTimetable;
+  const anchorDate = timetableData.teacher?.exportDate;
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const classLessons = timetableData.recurringLessons.filter(
+    (rl) => rl.classId === classId
+  );
+  if (classLessons.length === 0) return [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startMonday = getMonday(today);
+
+  const results = [];
+
+  for (let w = 0; w < weeksAhead; w++) {
+    const weekStart = new Date(startMonday);
+    weekStart.setDate(startMonday.getDate() + w * 7);
+
+    const weekNum = isTwoWeek && anchorDate
+      ? getWeekNumber(weekStart, anchorDate)
+      : null;
+
+    for (let d = 0; d < 5; d++) {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + d);
+
+      // Skip days in the past
+      if (date < today) continue;
+
+      const dayOfWeek = d + 1; // 1=Mon..5=Fri
+
+      const dayLessons = classLessons
+        .filter((rl) => {
+          if (rl.dayOfWeek !== dayOfWeek) return false;
+          if (isTwoWeek && weekNum !== null && rl.weekNumber !== weekNum) return false;
+          return true;
+        })
+        .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+
+      // Merge consecutive half-periods
+      const merged = mergeConsecutiveLessons(dayLessons);
+
+      for (const lesson of merged) {
+        results.push({
+          date: new Date(date),
+          dateISO: formatDateISO(date),
+          dayName: dayNames[date.getDay()],
+          startTime: lesson.startTime,
+          endTime: lesson.endTime,
+          period: lesson.period,
+          room: lesson.room,
+          classId,
+          key: lessonInstanceKey(classId, date),
+        });
+      }
+    }
+  }
+
+  return results;
 }

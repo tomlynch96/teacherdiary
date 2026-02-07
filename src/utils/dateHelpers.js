@@ -145,4 +145,14 @@ export function getWeekNumber(date, anchorDate) {
   return mod === 0 ? 1 : 2;
 }
 
+/**
+ * Format a date as "YYYY-MM-DD" for use as storage keys.
+ */
+export function formatDateISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export { DAY_NAMES, DAY_NAMES_SHORT, MONTH_NAMES, MONTH_NAMES_SHORT };

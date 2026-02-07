@@ -7,7 +7,7 @@ import { formatTime } from '../utils/dateHelpers';
 // Color is passed in from the parent (per-class, not per-subject).
 // Adapts content density based on available height.
 
-export default function LessonCard({ lesson, height = 100, accent = '#81B29A', onClick }) {
+export default function LessonCard({ lesson, height = 100, accent = '#81B29A', hasData = false, onClick }) {
   const isCompact = height < 80;
   const isTiny = height < 50;
 
@@ -26,6 +26,12 @@ export default function LessonCard({ lesson, height = 100, accent = '#81B29A', o
         className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
         style={{ backgroundColor: accent }}
       />
+
+      {/* Dot indicator: lesson has title/notes/links */}
+      {hasData && (
+        <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full z-10"
+          style={{ backgroundColor: accent }} />
+      )}
 
       {isTiny ? (
         /* ---- Tiny layout: single row ---- */

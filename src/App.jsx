@@ -7,49 +7,46 @@ import {
   getTimetableData,
   setTimetableData,
   clearTimetableData,
+  getLessonInstances,
+  setLessonInstances,
 } from './utils/storage';
 
 // ===== App =====
 // Root component. Manages:
-// - Whether timetable data is loaded (shows import vs. main view)
+// - Timetable data (imported JSON + class edits)
+// - Lesson instances (per-lesson titles, notes, links keyed by "classId::date")
 // - Current navigation view
-// - Top-level state that children share
-// - Persisting class edits (size, notes, etc.) to localStorage
 
 export default function App() {
   const [timetable, setTimetable] = useState(null);
+  const [lessonInstances, setLessonInstancesState] = useState({});
   const [currentView, setCurrentView] = useState('week');
   const [loading, setLoading] = useState(true);
 
-  // On mount, check if we already have data in localStorage
+  // On mount, load persisted data
   useEffect(() => {
-    const saved = getTimetableData();
-    if (saved) {
-      setTimetable(saved);
-    }
+    const savedTimetable = getTimetableData();
+    if (savedTimetable) setTimetable(savedTimetable);
+    const savedInstances = getLessonInstances();
+    if (savedInstances) setLessonInstancesState(savedInstances);
     setLoading(false);
   }, []);
 
-  // Handle successful JSON import
   const handleImport = (data) => {
     setTimetableData(data);
     setTimetable(data);
   };
 
-  // Handle data reset (back to import screen)
   const handleClearData = () => {
     if (window.confirm('Clear your timetable data? You can re-import it anytime.')) {
       clearTimetableData();
       setTimetable(null);
+      setLessonInstancesState({});
       setCurrentView('week');
     }
   };
 
-  /**
-   * Update a class's editable fields (classSize, notes, etc.).
-   * Merges the updates into the class object, updates state, and
-   * persists to localStorage so changes survive a page reload.
-   */
+  // Update a class's editable fields (classSize, notes, etc.)
   const handleUpdateClass = (classId, updates) => {
     setTimetable((prev) => {
       const updated = {
@@ -58,13 +55,20 @@ export default function App() {
           cls.id === classId ? { ...cls, ...updates } : cls
         ),
       };
-      // Persist immediately
       setTimetableData(updated);
       return updated;
     });
   };
 
-  // Don't flash content while checking localStorage
+  // Update a lesson instance (title, notes, links for a specific class+date)
+  const handleUpdateInstance = (key, data) => {
+    setLessonInstancesState((prev) => {
+      const updated = { ...prev, [key]: data };
+      setLessonInstances(updated);
+      return updated;
+    });
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-cream">
@@ -75,29 +79,30 @@ export default function App() {
 
   return (
     <div className="h-screen flex overflow-hidden bg-cream">
-      {/* Sidebar is always visible */}
       <Sidebar
         currentView={currentView}
         onNavigate={setCurrentView}
         teacherName={timetable?.teacher?.name}
       />
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 min-w-0">
         {!timetable ? (
           <FileImport onImport={handleImport} />
         ) : currentView === 'week' ? (
           <WeekView
             timetableData={timetable}
+            lessonInstances={lessonInstances}
+            onUpdateInstance={handleUpdateInstance}
             onClearData={handleClearData}
           />
         ) : currentView === 'class' ? (
           <ClassView
             timetableData={timetable}
+            lessonInstances={lessonInstances}
             onUpdateClass={handleUpdateClass}
+            onUpdateInstance={handleUpdateInstance}
           />
         ) : (
-          // Placeholder for future views
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <p className="font-serif text-2xl font-bold text-navy/20 mb-2">

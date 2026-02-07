@@ -5,6 +5,7 @@
 const KEYS = {
   TIMETABLE: 'timetableData',
   LESSONS: 'lessons',
+  LESSON_INSTANCES: 'lessonInstances',
   SETTINGS: 'settings',
 };
 
@@ -47,6 +48,27 @@ export function setTimetableData(data) {
 export function clearTimetableData() {
   removeItem(KEYS.TIMETABLE);
   removeItem(KEYS.LESSONS);
+  removeItem(KEYS.LESSON_INSTANCES);
+}
+
+// ---- Lesson Instances ----
+// Keyed by "classId::YYYY-MM-DD" e.g. "12G2::2026-02-09"
+// Each value: { title, notes, links: [{url, label}] }
+
+export function getLessonInstances() {
+  return getItem(KEYS.LESSON_INSTANCES) || {};
+}
+
+export function setLessonInstances(instances) {
+  return setItem(KEYS.LESSON_INSTANCES, instances);
+}
+
+export function updateLessonInstance(key, updates) {
+  const all = getLessonInstances();
+  const existing = all[key] || { title: '', notes: '', links: [] };
+  all[key] = { ...existing, ...updates };
+  setLessonInstances(all);
+  return all;
 }
 
 // ---- Settings ----
