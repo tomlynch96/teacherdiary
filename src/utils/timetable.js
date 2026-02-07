@@ -1,17 +1,23 @@
 // ===== Timetable Helpers =====
 // Maps recurring lesson definitions onto specific calendar days.
+// Supports both single-week and two-week timetable rotations.
 
-import { getDayOfWeek, timeToMinutes } from './dateHelpers';
+import { getDayOfWeek, timeToMinutes, getWeekNumber } from './dateHelpers';
 
 /**
  * Given the full timetable data and an array of 5 week-day Dates,
  * returns an object keyed by dayOfWeek (1-5) with sorted lesson arrays.
  *
- * Each lesson gets the actual date attached to it.
+ * For two-week timetables, we calculate which week (1 or 2) each date
+ * falls in, and only show lessons matching that week number.
  */
 export function getLessonsForWeek(timetableData, weekDays) {
   if (!timetableData?.recurringLessons) return {};
 
+  const isTwoWeek = !!timetableData.twoWeekTimetable;
+  const anchorDate = timetableData.teacher?.exportDate;
+
+  // Build a lookup map for class details
   const classMap = {};
   if (timetableData.classes) {
     timetableData.classes.forEach((c) => {
@@ -23,13 +29,24 @@ export function getLessonsForWeek(timetableData, weekDays) {
 
   weekDays.forEach((date) => {
     const dayNum = getDayOfWeek(date); // 1=Mon ... 5=Fri
+
+    // For two-week timetables, determine if this date is in week 1 or 2
+    const currentWeekNum = isTwoWeek && anchorDate
+      ? getWeekNumber(date, anchorDate)
+      : null;
+
     const dayLessons = timetableData.recurringLessons
-      .filter((rl) => rl.dayOfWeek === dayNum)
+      .filter((rl) => {
+        if (rl.dayOfWeek !== dayNum) return false;
+        if (isTwoWeek && currentWeekNum !== null && rl.weekNumber !== currentWeekNum) return false;
+        return true;
+      })
       .map((rl) => ({
         ...rl,
         date,
         className: classMap[rl.classId]?.name || rl.classId,
         classSize: classMap[rl.classId]?.classSize || null,
+        timetableCode: classMap[rl.classId]?.timetableCode || null,
       }))
       .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 
@@ -40,12 +57,38 @@ export function getLessonsForWeek(timetableData, weekDays) {
 }
 
 /**
- * Get the earliest start time and latest end time across all lessons,
- * so we can size the calendar grid properly.
+ * Get duties (break duty, line manage, detention) for the given week.
+ */
+export function getDutiesForWeek(timetableData, weekDays) {
+  if (!timetableData?.duties?.length) return {};
+
+  const isTwoWeek = !!timetableData.twoWeekTimetable;
+  const anchorDate = timetableData.teacher?.exportDate;
+
+  const dutiesByDay = {};
+
+  weekDays.forEach((date) => {
+    const dayNum = getDayOfWeek(date);
+    const currentWeekNum = isTwoWeek && anchorDate
+      ? getWeekNumber(date, anchorDate)
+      : null;
+
+    dutiesByDay[dayNum] = (timetableData.duties || []).filter((d) => {
+      if (d.day !== dayNum) return false;
+      if (isTwoWeek && currentWeekNum !== null && d.week !== currentWeekNum) return false;
+      return true;
+    });
+  });
+
+  return dutiesByDay;
+}
+
+/**
+ * Get the earliest start time and latest end time across all lessons.
  */
 export function getTimeRange(timetableData) {
   if (!timetableData?.recurringLessons?.length) {
-    return { startHour: 8, endHour: 16 }; // sensible defaults
+    return { startHour: 8, endHour: 16 };
   }
 
   let earliest = 24 * 60;
@@ -58,7 +101,6 @@ export function getTimeRange(timetableData) {
     if (end > latest) latest = end;
   });
 
-  // Round down/up to nearest hour and add a small buffer
   return {
     startHour: Math.floor(earliest / 60),
     endHour: Math.ceil(latest / 60),
@@ -66,32 +108,78 @@ export function getTimeRange(timetableData) {
 }
 
 /**
- * Get a color class based on subject name.
- * This creates visual variety in the timetable.
+ * A palette of 12 visually distinct, warm-professional colors.
+ * Each class gets assigned a unique color by index.
  */
-export function getSubjectColor(subject) {
-  if (!subject) return 'lesson-default';
-  const s = subject.toLowerCase();
-  if (s.includes('physics')) return 'lesson-physics';
-  if (s.includes('math')) return 'lesson-maths';
-  if (s.includes('chem')) return 'lesson-chemistry';
-  if (s.includes('bio')) return 'lesson-biology';
-  if (s.includes('eng')) return 'lesson-english';
-  return 'lesson-default';
-}
+const CLASS_PALETTE = [
+  '#81B29A', // sage
+  '#E07A5F', // terracotta
+  '#3D405B', // navy
+  '#6A994E', // forest
+  '#BC6C25', // amber
+  '#7B68EE', // medium slate blue
+  '#D4A373', // tan
+  '#457B9D', // steel blue
+  '#E63946', // red
+  '#2A9D8F', // teal
+  '#A855F7', // purple
+  '#F4845F', // coral
+];
 
 /**
- * Get a solid accent color for subject badges.
+ * Get a consistent color for a class based on its position in the
+ * classes array. Each class gets its own distinct color so they're
+ * easy to tell apart at a glance on the week grid.
+ *
+ * @param {string} classId - the class ID
+ * @param {Array} classes - the full classes array from timetable data
+ * @returns {string} hex color
  */
-export function getSubjectAccent(subject) {
-  if (!subject) return '#81B29A';
-  const s = subject.toLowerCase();
-  if (s.includes('physics')) return '#81B29A';
-  if (s.includes('math')) return '#E07A5F';
-  if (s.includes('chem')) return '#3D405B';
-  if (s.includes('bio')) return '#6A994E';
-  if (s.includes('eng')) return '#BC6C25';
-  return '#81B29A';
+export function getClassColor(classId, classes) {
+  if (!classes || !classId) return CLASS_PALETTE[0];
+  const index = classes.findIndex((c) => c.id === classId);
+  if (index === -1) return CLASS_PALETTE[0];
+  return CLASS_PALETTE[index % CLASS_PALETTE.length];
+}
+
+/** Expose the palette so ClassView can show swatches */
+export { CLASS_PALETTE };
+
+/**
+ * Merge consecutive half-periods for the same class into single blocks.
+ * e.g. 12G2 period 3a (11:30-12:00) + 12G2 period 3b (12:00-12:30)
+ *   → single block 12G2 periods 3a–3b (11:30-12:30)
+ *
+ * This makes the timetable much cleaner since your school's half-periods
+ * are really one continuous lesson.
+ */
+export function mergeConsecutiveLessons(lessons) {
+  if (!lessons || lessons.length === 0) return [];
+
+  const sorted = [...lessons].sort(
+    (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+  );
+
+  const merged = [];
+  let current = { ...sorted[0] };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i];
+
+    // Same class and the end time of current matches start time of next?
+    if (current.classId === next.classId && current.endTime === next.startTime) {
+      current.endTime = next.endTime;
+      // Show combined period range, e.g. "3a–3b"
+      const firstPeriod = current.period.split('–')[0];
+      current.period = `${firstPeriod}–${next.period}`;
+    } else {
+      merged.push(current);
+      current = { ...next };
+    }
+  }
+  merged.push(current);
+
+  return merged;
 }
 
 /**
@@ -111,7 +199,6 @@ export function validateTimetableJSON(data) {
     errors.push('Missing or invalid "recurringLessons" array');
   }
 
-  // Validate individual lessons
   if (data.recurringLessons?.length) {
     data.recurringLessons.forEach((rl, i) => {
       if (!rl.dayOfWeek || rl.dayOfWeek < 1 || rl.dayOfWeek > 5) {
@@ -122,6 +209,9 @@ export function validateTimetableJSON(data) {
       }
       if (!rl.endTime || !/^\d{2}:\d{2}$/.test(rl.endTime)) {
         errors.push(`Lesson ${i}: endTime must be HH:MM format`);
+      }
+      if (data.twoWeekTimetable && !rl.weekNumber) {
+        errors.push(`Lesson ${i}: weekNumber required for two-week timetable`);
       }
     });
   }

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import WeekView from './components/WeekView';
+import ClassView from './components/ClassView';
 import FileImport from './components/FileImport';
 import {
   getTimetableData,
   setTimetableData,
   clearTimetableData,
-  hasData,
 } from './utils/storage';
 
 // ===== App =====
@@ -14,6 +14,7 @@ import {
 // - Whether timetable data is loaded (shows import vs. main view)
 // - Current navigation view
 // - Top-level state that children share
+// - Persisting class edits (size, notes, etc.) to localStorage
 
 export default function App() {
   const [timetable, setTimetable] = useState(null);
@@ -44,6 +45,25 @@ export default function App() {
     }
   };
 
+  /**
+   * Update a class's editable fields (classSize, notes, etc.).
+   * Merges the updates into the class object, updates state, and
+   * persists to localStorage so changes survive a page reload.
+   */
+  const handleUpdateClass = (classId, updates) => {
+    setTimetable((prev) => {
+      const updated = {
+        ...prev,
+        classes: prev.classes.map((cls) =>
+          cls.id === classId ? { ...cls, ...updates } : cls
+        ),
+      };
+      // Persist immediately
+      setTimetableData(updated);
+      return updated;
+    });
+  };
+
   // Don't flash content while checking localStorage
   if (loading) {
     return (
@@ -65,13 +85,16 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 min-w-0">
         {!timetable ? (
-          // No data yet → show the import screen
           <FileImport onImport={handleImport} />
         ) : currentView === 'week' ? (
-          // Week view (Phase 1 primary view)
           <WeekView
             timetableData={timetable}
             onClearData={handleClearData}
+          />
+        ) : currentView === 'class' ? (
+          <ClassView
+            timetableData={timetable}
+            onUpdateClass={handleUpdateClass}
           />
         ) : (
           // Placeholder for future views

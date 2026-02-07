@@ -120,4 +120,29 @@ export function getDayOfWeek(date) {
   return day === 0 ? 7 : day; // Convert Sunday from 0 to 7
 }
 
+/**
+ * Determine which timetable week (1 or 2) a given date falls in,
+ * based on an anchor date that is known to be in Week 1.
+ *
+ * We count the number of whole weeks between the anchor's Monday
+ * and the target's Monday. Even offsets = Week 1, odd = Week 2.
+ *
+ * @param {Date} date - the date to check
+ * @param {string|Date} anchorDate - a date known to be in Week 1 (e.g. exportDate)
+ * @returns {number} 1 or 2
+ */
+export function getWeekNumber(date, anchorDate) {
+  const anchor = typeof anchorDate === 'string' ? new Date(anchorDate) : new Date(anchorDate);
+  const anchorMon = getMonday(anchor);
+  const targetMon = getMonday(date);
+
+  const diffMs = targetMon.getTime() - anchorMon.getTime();
+  const diffWeeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
+
+  // Use modulo to alternate: 0 → week 1, 1 → week 2, 2 → week 1, etc.
+  // Handle negative weeks (dates before the anchor) correctly.
+  const mod = ((diffWeeks % 2) + 2) % 2; // always 0 or 1
+  return mod === 0 ? 1 : 2;
+}
+
 export { DAY_NAMES, DAY_NAMES_SHORT, MONTH_NAMES, MONTH_NAMES_SHORT };

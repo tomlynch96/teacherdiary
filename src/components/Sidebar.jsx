@@ -17,7 +17,7 @@ import {
 
 const NAV_ITEMS = [
   { id: 'week', label: 'Week View', icon: Calendar, active: true },
-  { id: 'class', label: 'Class View', icon: BookOpen, active: false },
+  { id: 'class', label: 'Class View', icon: BookOpen, active: true },
   { id: 'print', label: 'Printing', icon: Printer, active: false },
   { id: 'todos', label: 'To-Do List', icon: CheckSquare, active: false },
   { id: 'meetings', label: 'Meetings', icon: Users, active: false },

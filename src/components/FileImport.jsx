@@ -4,41 +4,113 @@ import { validateTimetableJSON } from '../utils/timetable';
 
 // ===== FileImport =====
 // Shown when no timetable is loaded. Handles JSON file upload + validation.
-// Also provides a "Load Demo" option for quick testing.
+// Also provides a "Load Demo" option using a condensed version of the real timetable.
 
-// Demo data so you can test without a real JSON file
+// Condensed demo — a subset of the real two-week timetable so you can test quickly.
 const DEMO_DATA = {
-  teacher: {
-    name: 'Ms. Thompson',
-    exportDate: '2026-01-21',
-  },
+  teacher: { name: 'Mr Tom Lynch', exportDate: '2026-01-21' },
+  twoWeekTimetable: true,
   classes: [
-    { id: '12G2', name: '12G2', subject: 'Physics', classSize: 24 },
-    { id: '10X1', name: '10X1', subject: 'Physics', classSize: 30 },
-    { id: '13A1', name: '13A1', subject: 'Physics', classSize: 18 },
-    { id: '9B3', name: '9B3', subject: 'Physics', classSize: 32 },
-    { id: '11T4', name: '11T4', subject: 'Physics', classSize: 28 },
+    { id: '12G2', name: '12G2', subject: 'Physics', classSize: null, timetableCode: '12G2/Ph' },
+    { id: '10TS1', name: '10TS1', subject: 'Physics', classSize: null, timetableCode: '10TS1/Ph' },
+    { id: '10TS2', name: '10TS2', subject: 'Physics', classSize: null, timetableCode: '10TS2/Ph' },
+    { id: '13G2', name: '13G2', subject: 'Physics', classSize: null, timetableCode: '13G2/Ph' },
+    { id: '9p', name: '9p', subject: 'Science', classSize: null, timetableCode: '9p/Sc3' },
+    { id: '8A3', name: '8A3', subject: 'Science', classSize: null, timetableCode: '8A3/Sc' },
+    { id: '7UP1', name: '7UP1', subject: 'Science', classSize: null, timetableCode: '7UP1/Sc' },
+    { id: '11ab', name: '11ab', subject: 'Science', classSize: null, timetableCode: '11ab/Sc1' },
   ],
   recurringLessons: [
-    // Monday
-    { id: 'mon-1-10X1', dayOfWeek: 1, startTime: '08:45', endTime: '09:45', classId: '10X1', subject: 'Physics', room: 'C304 Lab', period: '1' },
-    { id: 'mon-3a-12G2', dayOfWeek: 1, startTime: '11:30', endTime: '12:00', classId: '12G2', subject: 'Physics', room: 'C304 Classroom', period: '3a' },
-    { id: 'mon-4-9B3', dayOfWeek: 1, startTime: '13:30', endTime: '14:30', classId: '9B3', subject: 'Physics', room: 'C201 Lab', period: '4' },
-    // Tuesday
-    { id: 'tue-1-13A1', dayOfWeek: 2, startTime: '08:45', endTime: '09:45', classId: '13A1', subject: 'Physics', room: 'C304 Classroom', period: '1' },
-    { id: 'tue-2-11T4', dayOfWeek: 2, startTime: '10:00', endTime: '11:00', classId: '11T4', subject: 'Physics', room: 'C201 Lab', period: '2' },
-    { id: 'tue-4-12G2', dayOfWeek: 2, startTime: '13:30', endTime: '14:30', classId: '12G2', subject: 'Physics', room: 'C304 Lab', period: '4' },
-    // Wednesday
-    { id: 'wed-2-10X1', dayOfWeek: 3, startTime: '10:00', endTime: '11:00', classId: '10X1', subject: 'Physics', room: 'C304 Lab', period: '2' },
-    { id: 'wed-3-9B3', dayOfWeek: 3, startTime: '11:30', endTime: '12:30', classId: '9B3', subject: 'Physics', room: 'C201 Lab', period: '3' },
-    { id: 'wed-5-13A1', dayOfWeek: 3, startTime: '14:45', endTime: '15:45', classId: '13A1', subject: 'Physics', room: 'C304 Classroom', period: '5' },
-    // Thursday
-    { id: 'thu-1-11T4', dayOfWeek: 4, startTime: '08:45', endTime: '09:45', classId: '11T4', subject: 'Physics', room: 'C201 Lab', period: '1' },
-    { id: 'thu-3-12G2', dayOfWeek: 4, startTime: '11:30', endTime: '12:30', classId: '12G2', subject: 'Physics', room: 'C304 Classroom', period: '3' },
-    // Friday
-    { id: 'fri-2-10X1', dayOfWeek: 5, startTime: '10:00', endTime: '11:00', classId: '10X1', subject: 'Physics', room: 'C304 Lab', period: '2' },
-    { id: 'fri-3-9B3', dayOfWeek: 5, startTime: '11:30', endTime: '12:30', classId: '9B3', subject: 'Physics', room: 'C201 Lab', period: '3' },
-    { id: 'fri-4-13A1', dayOfWeek: 5, startTime: '13:30', endTime: '14:30', classId: '13A1', subject: 'Physics', room: 'C304 Classroom', period: '4' },
+    // Week 1 Monday
+    { id: 'w1-mon-3a-12G2', weekNumber: 1, dayOfWeek: 1, startTime: '11:30', endTime: '12:00', classId: '12G2', subject: 'Physics', room: 'C304 Classroom', period: '3a' },
+    { id: 'w1-mon-3b-12G2', weekNumber: 1, dayOfWeek: 1, startTime: '12:00', endTime: '12:30', classId: '12G2', subject: 'Physics', room: 'C304 Classroom', period: '3b' },
+    { id: 'w1-mon-4b-9p', weekNumber: 1, dayOfWeek: 1, startTime: '13:10', endTime: '13:30', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w1-mon-4c-9p', weekNumber: 1, dayOfWeek: 1, startTime: '13:30', endTime: '14:10', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '4c' },
+    { id: 'w1-mon-5a-10TS2', weekNumber: 1, dayOfWeek: 1, startTime: '14:10', endTime: '14:40', classId: '10TS2', subject: 'Physics', room: 'B106 Science Lab', period: '5a' },
+    { id: 'w1-mon-5b-10TS2', weekNumber: 1, dayOfWeek: 1, startTime: '14:40', endTime: '15:10', classId: '10TS2', subject: 'Physics', room: 'B106 Science Lab', period: '5b' },
+    // Week 1 Tuesday
+    { id: 'w1-tue-1a-10TS1', weekNumber: 1, dayOfWeek: 2, startTime: '09:10', endTime: '09:40', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '1a' },
+    { id: 'w1-tue-1b-10TS1', weekNumber: 1, dayOfWeek: 2, startTime: '09:40', endTime: '10:10', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '1b' },
+    { id: 'w1-tue-2a-8A3', weekNumber: 1, dayOfWeek: 2, startTime: '10:10', endTime: '10:30', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '2a' },
+    { id: 'w1-tue-2b-8A3', weekNumber: 1, dayOfWeek: 2, startTime: '10:30', endTime: '11:10', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '2b' },
+    { id: 'w1-tue-3a-7UP1', weekNumber: 1, dayOfWeek: 2, startTime: '11:30', endTime: '12:00', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w1-tue-3b-7UP1', weekNumber: 1, dayOfWeek: 2, startTime: '12:00', endTime: '12:30', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w1-tue-4b-11ab', weekNumber: 1, dayOfWeek: 2, startTime: '13:10', endTime: '13:30', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w1-tue-4c-11ab', weekNumber: 1, dayOfWeek: 2, startTime: '13:30', endTime: '14:10', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '4c' },
+    { id: 'w1-tue-5a-12G2', weekNumber: 1, dayOfWeek: 2, startTime: '14:10', endTime: '14:40', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w1-tue-5b-12G2', weekNumber: 1, dayOfWeek: 2, startTime: '14:40', endTime: '15:10', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '5b' },
+    // Week 1 Wednesday
+    { id: 'w1-wed-3a-10TS1', weekNumber: 1, dayOfWeek: 3, startTime: '11:30', endTime: '12:00', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w1-wed-3b-10TS1', weekNumber: 1, dayOfWeek: 3, startTime: '12:00', endTime: '12:30', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w1-wed-4a-13G2', weekNumber: 1, dayOfWeek: 3, startTime: '12:30', endTime: '13:10', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4a' },
+    { id: 'w1-wed-4b-13G2', weekNumber: 1, dayOfWeek: 3, startTime: '13:10', endTime: '13:30', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w1-wed-5a-11ab', weekNumber: 1, dayOfWeek: 3, startTime: '14:10', endTime: '14:40', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w1-wed-5b-11ab', weekNumber: 1, dayOfWeek: 3, startTime: '14:40', endTime: '15:10', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '5b' },
+    // Week 1 Thursday
+    { id: 'w1-thu-3a-8A3', weekNumber: 1, dayOfWeek: 4, startTime: '11:30', endTime: '12:00', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w1-thu-3b-8A3', weekNumber: 1, dayOfWeek: 4, startTime: '12:00', endTime: '12:30', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w1-thu-4a-13G2', weekNumber: 1, dayOfWeek: 4, startTime: '12:30', endTime: '13:10', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4a' },
+    { id: 'w1-thu-4b-13G2', weekNumber: 1, dayOfWeek: 4, startTime: '13:10', endTime: '13:30', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w1-thu-5a-10TS2', weekNumber: 1, dayOfWeek: 4, startTime: '14:10', endTime: '14:40', classId: '10TS2', subject: 'Physics', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w1-thu-5b-10TS2', weekNumber: 1, dayOfWeek: 4, startTime: '14:40', endTime: '15:10', classId: '10TS2', subject: 'Physics', room: 'B206 Science Lab', period: '5b' },
+    // Week 1 Friday
+    { id: 'w1-fri-3a-11ab', weekNumber: 1, dayOfWeek: 5, startTime: '11:30', endTime: '12:00', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w1-fri-3b-11ab', weekNumber: 1, dayOfWeek: 5, startTime: '12:00', endTime: '12:30', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w1-fri-4a-13G2', weekNumber: 1, dayOfWeek: 5, startTime: '12:30', endTime: '13:10', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4a' },
+    { id: 'w1-fri-4b-13G2', weekNumber: 1, dayOfWeek: 5, startTime: '13:10', endTime: '13:30', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w1-fri-5a-10TS1', weekNumber: 1, dayOfWeek: 5, startTime: '14:10', endTime: '14:40', classId: '10TS1', subject: 'Physics', room: 'E101 Classroom', period: '5a' },
+    { id: 'w1-fri-5b-10TS1', weekNumber: 1, dayOfWeek: 5, startTime: '14:40', endTime: '15:10', classId: '10TS1', subject: 'Physics', room: 'E101 Classroom', period: '5b' },
+    // Week 2 Monday
+    { id: 'w2-mon-3a-12G2', weekNumber: 2, dayOfWeek: 1, startTime: '11:30', endTime: '12:00', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w2-mon-3b-12G2', weekNumber: 2, dayOfWeek: 1, startTime: '12:00', endTime: '12:30', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w2-mon-4b-9p', weekNumber: 2, dayOfWeek: 1, startTime: '13:10', endTime: '13:30', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w2-mon-4c-9p', weekNumber: 2, dayOfWeek: 1, startTime: '13:30', endTime: '14:10', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '4c' },
+    // Week 2 Tuesday
+    { id: 'w2-tue-1a-10TS2', weekNumber: 2, dayOfWeek: 2, startTime: '09:10', endTime: '09:40', classId: '10TS2', subject: 'Physics', room: 'A04 Art Studio 2', period: '1a' },
+    { id: 'w2-tue-1b-10TS2', weekNumber: 2, dayOfWeek: 2, startTime: '09:40', endTime: '10:10', classId: '10TS2', subject: 'Physics', room: 'A04 Art Studio 2', period: '1b' },
+    { id: 'w2-tue-2b-9p', weekNumber: 2, dayOfWeek: 2, startTime: '10:30', endTime: '11:10', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '2b' },
+    { id: 'w2-tue-2c-9p', weekNumber: 2, dayOfWeek: 2, startTime: '11:10', endTime: '11:30', classId: '9p', subject: 'Science', room: 'B206 Science Lab', period: '2c' },
+    { id: 'w2-tue-4b-11ab', weekNumber: 2, dayOfWeek: 2, startTime: '13:10', endTime: '13:30', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w2-tue-4c-11ab', weekNumber: 2, dayOfWeek: 2, startTime: '13:30', endTime: '14:10', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '4c' },
+    { id: 'w2-tue-5a-8A3', weekNumber: 2, dayOfWeek: 2, startTime: '14:10', endTime: '14:40', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w2-tue-5b-8A3', weekNumber: 2, dayOfWeek: 2, startTime: '14:40', endTime: '15:10', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '5b' },
+    // Week 2 Wednesday
+    { id: 'w2-wed-1a-10TS2', weekNumber: 2, dayOfWeek: 3, startTime: '09:10', endTime: '09:40', classId: '10TS2', subject: 'Physics', room: 'B106 Science Lab', period: '1a' },
+    { id: 'w2-wed-1b-10TS2', weekNumber: 2, dayOfWeek: 3, startTime: '09:40', endTime: '10:10', classId: '10TS2', subject: 'Physics', room: 'B106 Science Lab', period: '1b' },
+    { id: 'w2-wed-3a-10TS1', weekNumber: 2, dayOfWeek: 3, startTime: '11:30', endTime: '12:00', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w2-wed-3b-10TS1', weekNumber: 2, dayOfWeek: 3, startTime: '12:00', endTime: '12:30', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w2-wed-4a-13G2', weekNumber: 2, dayOfWeek: 3, startTime: '12:30', endTime: '13:10', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4a' },
+    { id: 'w2-wed-4b-13G2', weekNumber: 2, dayOfWeek: 3, startTime: '13:10', endTime: '13:30', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w2-wed-5a-11ab', weekNumber: 2, dayOfWeek: 3, startTime: '14:10', endTime: '14:40', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w2-wed-5b-11ab', weekNumber: 2, dayOfWeek: 3, startTime: '14:40', endTime: '15:10', classId: '11ab', subject: 'Science', room: 'B206 Science Lab', period: '5b' },
+    { id: 'w2-wed-6a-13G2', weekNumber: 2, dayOfWeek: 3, startTime: '15:10', endTime: '15:40', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '6a' },
+    { id: 'w2-wed-6b-13G2', weekNumber: 2, dayOfWeek: 3, startTime: '15:40', endTime: '16:10', classId: '13G2', subject: 'Physics', room: 'B206 Science Lab', period: '6b' },
+    // Week 2 Thursday
+    { id: 'w2-thu-1a-12G2', weekNumber: 2, dayOfWeek: 4, startTime: '09:10', endTime: '09:40', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '1a' },
+    { id: 'w2-thu-1b-12G2', weekNumber: 2, dayOfWeek: 4, startTime: '09:40', endTime: '10:10', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '1b' },
+    { id: 'w2-thu-3a-8A3', weekNumber: 2, dayOfWeek: 4, startTime: '11:30', endTime: '12:00', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w2-thu-3b-8A3', weekNumber: 2, dayOfWeek: 4, startTime: '12:00', endTime: '12:30', classId: '8A3', subject: 'Science', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w2-thu-4b-7UP1', weekNumber: 2, dayOfWeek: 4, startTime: '13:10', endTime: '13:30', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '4b' },
+    { id: 'w2-thu-4c-7UP1', weekNumber: 2, dayOfWeek: 4, startTime: '13:30', endTime: '14:10', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '4c' },
+    { id: 'w2-thu-5a-10TS2', weekNumber: 2, dayOfWeek: 4, startTime: '14:10', endTime: '14:40', classId: '10TS2', subject: 'Physics', room: 'B102 Science Lab', period: '5a' },
+    { id: 'w2-thu-5b-10TS2', weekNumber: 2, dayOfWeek: 4, startTime: '14:40', endTime: '15:10', classId: '10TS2', subject: 'Physics', room: 'B102 Science Lab', period: '5b' },
+    // Week 2 Friday
+    { id: 'w2-fri-1a-7UP1', weekNumber: 2, dayOfWeek: 5, startTime: '09:10', endTime: '09:40', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '1a' },
+    { id: 'w2-fri-1b-7UP1', weekNumber: 2, dayOfWeek: 5, startTime: '09:40', endTime: '10:10', classId: '7UP1', subject: 'Science', room: 'B206 Science Lab', period: '1b' },
+    { id: 'w2-fri-3a-12G2', weekNumber: 2, dayOfWeek: 5, startTime: '11:30', endTime: '12:00', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '3a' },
+    { id: 'w2-fri-3b-12G2', weekNumber: 2, dayOfWeek: 5, startTime: '12:00', endTime: '12:30', classId: '12G2', subject: 'Physics', room: 'B206 Science Lab', period: '3b' },
+    { id: 'w2-fri-5a-10TS1', weekNumber: 2, dayOfWeek: 5, startTime: '14:10', endTime: '14:40', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '5a' },
+    { id: 'w2-fri-5b-10TS1', weekNumber: 2, dayOfWeek: 5, startTime: '14:40', endTime: '15:10', classId: '10TS1', subject: 'Physics', room: 'B206 Science Lab', period: '5b' },
+  ],
+  duties: [
+    { week: 1, day: 1, period: '1a', activity: 'Line Manage', startTime: '09:10', endTime: '09:40' },
+    { week: 1, day: 1, period: '1b', activity: 'Line Manage', startTime: '09:40', endTime: '10:10' },
+    { week: 1, day: 1, period: '2a', activity: 'Break Duty', startTime: '10:10', endTime: '10:30' },
+    { week: 1, day: 1, period: '2c', activity: 'Break Duty', startTime: '11:10', endTime: '11:30' },
+    { week: 2, day: 1, period: '2a', activity: 'Break Duty', startTime: '10:10', endTime: '10:30' },
+    { week: 2, day: 1, period: '2c', activity: 'Break Duty', startTime: '11:10', endTime: '11:30' },
+    { week: 2, day: 4, period: '6a', activity: 'Detention', startTime: '15:10', endTime: '15:40' },
+    { week: 2, day: 4, period: '6b', activity: 'Detention', startTime: '15:40', endTime: '16:10' },
   ],
 };
 
@@ -68,7 +140,7 @@ export default function FileImport({ onImport }) {
       }
 
       setSuccess(true);
-      setTimeout(() => onImport(data), 600); // Brief delay so user sees the success state
+      setTimeout(() => onImport(data), 600);
     } catch (err) {
       setError('Could not parse JSON file. Check the format and try again.');
     }
@@ -104,7 +176,6 @@ export default function FileImport({ onImport }) {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="max-w-lg w-full">
-        {/* Title */}
         <div className="text-center mb-8">
           <h2 className="font-serif text-3xl font-bold text-navy mb-2">
             Welcome to Teacher Planner
@@ -166,7 +237,6 @@ export default function FileImport({ onImport }) {
           )}
         </div>
 
-        {/* Error message */}
         {error && (
           <div className="mt-4 p-4 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/20 flex gap-3">
             <AlertCircle size={20} className="text-terracotta shrink-0 mt-0.5" />
@@ -174,14 +244,12 @@ export default function FileImport({ onImport }) {
           </div>
         )}
 
-        {/* Divider */}
         <div className="flex items-center gap-4 my-8">
           <div className="flex-1 h-px bg-slate-200" />
           <span className="text-navy/30 text-sm font-medium">or</span>
           <div className="flex-1 h-px bg-slate-200" />
         </div>
 
-        {/* Demo button */}
         <button
           onClick={loadDemo}
           className="w-full flex items-center justify-center gap-2 px-6 py-4
@@ -195,7 +263,7 @@ export default function FileImport({ onImport }) {
         </button>
 
         <p className="text-center text-navy/30 text-xs mt-4">
-          The demo loads a sample Physics teacher timetable so you can explore the app.
+          The demo loads a two-week Physics &amp; Science timetable so you can explore the app.
         </p>
       </div>
     </div>

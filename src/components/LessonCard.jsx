@@ -1,78 +1,116 @@
 import React from 'react';
 import { Clock, MapPin, Users } from 'lucide-react';
 import { formatTime } from '../utils/dateHelpers';
-import { getSubjectAccent } from '../utils/timetable';
 
 // ===== LessonCard =====
-// A single lesson displayed in the weekly calendar grid.
-// Compact but informative. Clicking will eventually open a lesson detail view.
+// Positioned absolutely within the time grid. Fills its parent container.
+// Color is passed in from the parent (per-class, not per-subject).
+// Adapts content density based on available height.
 
-export default function LessonCard({ lesson, compact = false, onClick }) {
-  const accent = getSubjectAccent(lesson.subject);
+export default function LessonCard({ lesson, height = 100, accent = '#81B29A', onClick }) {
+  const isCompact = height < 80;
+  const isTiny = height < 50;
 
   return (
     <button
       onClick={() => onClick?.(lesson)}
       className={`
-        w-full text-left group relative
-        bg-white rounded-2xl border border-slate-100 shadow-sm
-        hover:shadow-md hover:shadow-[#3D405B]/5 hover:scale-[1.02]
-        active:scale-100 transition-smooth overflow-hidden
-        ${compact ? 'p-3' : 'p-4'}
+        w-full h-full text-left group relative overflow-hidden
+        bg-white rounded-xl border border-slate-100 shadow-sm
+        hover:shadow-md hover:shadow-[#3D405B]/5 hover:border-slate-200
+        active:scale-[0.99] transition-smooth
       `}
     >
       {/* Left accent bar */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
         style={{ backgroundColor: accent }}
       />
 
-      <div className="pl-2">
-        {/* Class name + Period */}
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="font-serif font-bold text-navy text-base leading-tight">
+      {isTiny ? (
+        /* ---- Tiny layout: single row ---- */
+        <div className="pl-3 pr-2 h-full flex items-center gap-2 min-w-0">
+          <span className="font-serif font-bold text-navy text-xs truncate">
             {lesson.className}
           </span>
-          {lesson.period && (
-            <span
-              className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
-              style={{
-                backgroundColor: `${accent}18`,
-                color: accent,
-              }}
-            >
-              P{lesson.period}
-            </span>
-          )}
-        </div>
-
-        {/* Subject */}
-        <p className="text-xs text-navy/50 font-medium mb-2">
-          {lesson.subject}
-        </p>
-
-        {/* Time + Room row */}
-        <div className="flex items-center gap-3 text-navy/40">
-          <span className="flex items-center gap-1 text-xs">
-            <Clock size={12} />
-            {formatTime(lesson.startTime)} – {formatTime(lesson.endTime)}
+          <span className="text-[10px] text-navy/35 shrink-0">
+            {formatTime(lesson.startTime)}–{formatTime(lesson.endTime)}
           </span>
           {lesson.room && (
-            <span className="flex items-center gap-1 text-xs truncate">
-              <MapPin size={12} />
+            <span className="text-[10px] text-navy/25 truncate hidden xl:inline">
               {lesson.room}
             </span>
           )}
         </div>
+      ) : isCompact ? (
+        /* ---- Compact layout: two rows ---- */
+        <div className="pl-3 pr-2 py-1.5 h-full flex flex-col justify-center min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="font-serif font-bold text-navy text-sm truncate leading-tight">
+              {lesson.className}
+            </span>
+            {lesson.period && (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                style={{ backgroundColor: `${accent}18`, color: accent }}
+              >
+                P{lesson.period}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-navy/35 mt-0.5">
+            <span className="text-[11px]">
+              {formatTime(lesson.startTime)}–{formatTime(lesson.endTime)}
+            </span>
+            {lesson.room && (
+              <span className="text-[11px] truncate">
+                {lesson.room}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ---- Full layout ---- */
+        <div className="pl-3 pr-2 py-2 h-full flex flex-col justify-center min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <span className="font-serif font-bold text-navy text-base leading-tight truncate">
+              {lesson.className}
+            </span>
+            {lesson.period && (
+              <span
+                className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                style={{ backgroundColor: `${accent}18`, color: accent }}
+              >
+                P{lesson.period}
+              </span>
+            )}
+          </div>
 
-        {/* Class size (if available) */}
-        {lesson.classSize && !compact && (
-          <span className="flex items-center gap-1 text-xs text-navy/30 mt-1">
-            <Users size={12} />
-            {lesson.classSize} students
-          </span>
-        )}
-      </div>
+          <p className="text-xs text-navy/45 font-medium mb-1.5">
+            {lesson.subject}
+          </p>
+
+          <div className="flex items-center gap-3 text-navy/35">
+            <span className="flex items-center gap-1 text-[11px]">
+              <Clock size={11} />
+              {formatTime(lesson.startTime)}–{formatTime(lesson.endTime)}
+            </span>
+            {lesson.room && (
+              <span className="flex items-center gap-1 text-[11px] truncate">
+                <MapPin size={11} />
+                {lesson.room}
+              </span>
+            )}
+          </div>
+
+          {lesson.classSize && (
+            <span className="flex items-center gap-1 text-[11px] text-navy/25 mt-1">
+              <Users size={11} />
+              {lesson.classSize} students
+            </span>
+          )}
+        </div>
+      )}
     </button>
   );
 }
