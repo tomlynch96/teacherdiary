@@ -1,121 +1,90 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import React, { useState, useEffect } from 'react';
+import Sidebar from './components/Sidebar';
+import WeekView from './components/WeekView';
+import FileImport from './components/FileImport';
+import {
+  getTimetableData,
+  setTimetableData,
+  clearTimetableData,
+  hasData,
+} from './utils/storage';
 
-function App() {
-  const [count, setCount] = useState(0)
+// ===== App =====
+// Root component. Manages:
+// - Whether timetable data is loaded (shows import vs. main view)
+// - Current navigation view
+// - Top-level state that children share
+
+export default function App() {
+  const [timetable, setTimetable] = useState(null);
+  const [currentView, setCurrentView] = useState('week');
+  const [loading, setLoading] = useState(true);
+
+  // On mount, check if we already have data in localStorage
+  useEffect(() => {
+    const saved = getTimetableData();
+    if (saved) {
+      setTimetable(saved);
+    }
+    setLoading(false);
+  }, []);
+
+  // Handle successful JSON import
+  const handleImport = (data) => {
+    setTimetableData(data);
+    setTimetable(data);
+  };
+
+  // Handle data reset (back to import screen)
+  const handleClearData = () => {
+    if (window.confirm('Clear your timetable data? You can re-import it anytime.')) {
+      clearTimetableData();
+      setTimetable(null);
+      setCurrentView('week');
+    }
+  };
+
+  // Don't flash content while checking localStorage
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-cream">
+        <div className="w-8 h-8 border-3 border-sage/30 border-t-sage rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="h-screen flex overflow-hidden bg-cream">
+      {/* Sidebar is always visible */}
+      <Sidebar
+        currentView={currentView}
+        onNavigate={setCurrentView}
+        teacherName={timetable?.teacher?.name}
+      />
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-h-0 min-w-0">
+        {!timetable ? (
+          // No data yet → show the import screen
+          <FileImport onImport={handleImport} />
+        ) : currentView === 'week' ? (
+          // Week view (Phase 1 primary view)
+          <WeekView
+            timetableData={timetable}
+            onClearData={handleClearData}
+          />
+        ) : (
+          // Placeholder for future views
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <p className="font-serif text-2xl font-bold text-navy/20 mb-2">
+                {currentView.charAt(0).toUpperCase() + currentView.slice(1)} View
+              </p>
+              <p className="text-navy/30 text-sm">Coming in a future update</p>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }
-
-export default App
