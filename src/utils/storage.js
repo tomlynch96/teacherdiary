@@ -6,6 +6,7 @@ const KEYS = {
   TIMETABLE: 'timetableData',
   LESSONS: 'lessons',
   LESSON_INSTANCES: 'lessonInstances',
+  TODOS: 'todos',
   SETTINGS: 'settings',
 };
 
@@ -69,6 +70,21 @@ export function updateLessonInstance(key, updates) {
   all[key] = { ...existing, ...updates };
   setLessonInstances(all);
   return all;
+}
+
+// ---- To-Do List ----
+// Array of tasks: [{ id, text, priority, completed, createdAt, scheduledSlot }]
+
+export function getTodos() {
+  return getItem(KEYS.TODOS) || [];
+}
+
+export function setTodos(todos) {
+  return setItem(KEYS.TODOS, todos);
+}
+
+export function clearTodos() {
+  removeItem(KEYS.TODOS);
 }
 
 // ---- Settings ----

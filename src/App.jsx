@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import WeekView from './components/WeekView';
 import ClassView from './components/ClassView';
+import ToDoView from './components/ToDoView';
 import FileImport from './components/FileImport';
 import {
   getTimetableData,
@@ -9,17 +10,21 @@ import {
   clearTimetableData,
   getLessonInstances,
   setLessonInstances,
+  getTodos,
+  setTodos,
 } from './utils/storage';
 
 // ===== App =====
 // Root component. Manages:
 // - Timetable data (imported JSON + class edits)
 // - Lesson instances (per-lesson titles, notes, links keyed by "classId::date")
+// - To-do list (tasks with scheduling)
 // - Current navigation view
 
 export default function App() {
   const [timetable, setTimetable] = useState(null);
   const [lessonInstances, setLessonInstancesState] = useState({});
+  const [todos, setTodosState] = useState([]);
   const [currentView, setCurrentView] = useState('week');
   const [loading, setLoading] = useState(true);
 
@@ -27,8 +32,13 @@ export default function App() {
   useEffect(() => {
     const savedTimetable = getTimetableData();
     if (savedTimetable) setTimetable(savedTimetable);
+    
     const savedInstances = getLessonInstances();
     if (savedInstances) setLessonInstancesState(savedInstances);
+    
+    const savedTodos = getTodos();
+    if (savedTodos) setTodosState(savedTodos);
+    
     setLoading(false);
   }, []);
 
@@ -69,6 +79,12 @@ export default function App() {
     });
   };
 
+  // Update todos
+  const handleUpdateTodos = (newTodos) => {
+    setTodosState(newTodos);
+    setTodos(newTodos);
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-cream">
@@ -102,14 +118,15 @@ export default function App() {
             onUpdateClass={handleUpdateClass}
             onUpdateInstance={handleUpdateInstance}
           />
+        ) : currentView === 'todos' ? (
+          <ToDoView
+            timetableData={timetable}
+            todos={todos}
+            onUpdateTodos={handleUpdateTodos}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <p className="font-serif text-2xl font-bold text-navy/20 mb-2">
-                {currentView.charAt(0).toUpperCase() + currentView.slice(1)} View
-              </p>
-              <p className="text-navy/30 text-sm">Coming in a future update</p>
-            </div>
+            <p className="text-navy/40">Coming soon...</p>
           </div>
         )}
       </main>

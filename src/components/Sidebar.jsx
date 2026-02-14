@@ -13,13 +13,12 @@ import {
 
 // ===== Sidebar =====
 // Navigation sidebar with the warm professional design.
-// Phase 1 only has the Week view active; others are placeholders.
 
 const NAV_ITEMS = [
   { id: 'week', label: 'Week View', icon: Calendar, active: true },
   { id: 'class', label: 'Class View', icon: BookOpen, active: true },
+  { id: 'todos', label: 'To-Do List', icon: CheckSquare, active: true },
   { id: 'print', label: 'Printing', icon: Printer, active: false },
-  { id: 'todos', label: 'To-Do List', icon: CheckSquare, active: false },
   { id: 'meetings', label: 'Meetings', icon: Users, active: false },
   { id: 'projects', label: 'Projects', icon: FolderKanban, active: false },
   { id: 'ai', label: 'AI Import', icon: Sparkles, active: false },
@@ -43,7 +42,7 @@ export default function Sidebar({ currentView, onNavigate, teacherName }) {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
-          const isDisabled = !item.active && item.id !== 'week';
+          const isDisabled = !item.active;
 
           return (
             <button
@@ -63,10 +62,8 @@ export default function Sidebar({ currentView, onNavigate, teacherName }) {
             >
               <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
               <span>{item.label}</span>
-
-              {/* "Coming soon" badge for disabled items */}
-              {isDisabled && (
-                <span className="ml-auto text-[10px] uppercase tracking-wider text-navy/20 font-semibold">
+              {!item.active && (
+                <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-navy/30">
                   Soon
                 </span>
               )}
@@ -75,11 +72,11 @@ export default function Sidebar({ currentView, onNavigate, teacherName }) {
         })}
       </nav>
 
-      {/* ---- Bottom Actions ---- */}
-      <div className="p-3 border-t border-slate-100 space-y-1">
+      {/* ---- Footer / Settings (placeholder) ---- */}
+      <div className="p-3 border-t border-slate-100">
         <button
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium
-                     text-navy/40 hover:bg-sand hover:text-navy transition-smooth"
+          disabled
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-navy/25 cursor-not-allowed"
         >
           <Settings size={18} />
           <span>Settings</span>
