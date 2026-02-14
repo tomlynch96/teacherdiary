@@ -6,6 +6,8 @@ import {
   RotateCcw,
   Calendar,
   CalendarRange,
+  Plus,
+  X,
 } from 'lucide-react';
 import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
@@ -119,14 +121,23 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     
     Object.keys(lessonsByDay).forEach(dayNum => {
       const lessons = lessonsByDay[dayNum] || [];
+      const duties = dutiesByDay[dayNum] || [];
       const dayIndex = parseInt(dayNum) - 1;
       if (dayIndex < 0 || dayIndex >= weekDays.length) return;
       
       const date = weekDays[dayIndex];
-      const occupied = lessons.map(l => ({
-        start: timeToMinutes(l.startTime),
-        end: timeToMinutes(l.endTime),
-      })).sort((a, b) => a.start - b.start);
+      
+      // Combine lessons AND duties as occupied time
+      const occupied = [
+        ...lessons.map(l => ({
+          start: timeToMinutes(l.startTime),
+          end: timeToMinutes(l.endTime),
+        })),
+        ...duties.map(d => ({
+          start: timeToMinutes(d.startTime),
+          end: timeToMinutes(d.endTime),
+        }))
+      ].sort((a, b) => a.start - b.start);
 
       let currentTime = startHour * 60;
       const dayPeriods = [];
@@ -163,7 +174,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     });
 
     return periods;
-  }, [lessonsByDay, weekDays, startHour, endHour]);
+  }, [lessonsByDay, dutiesByDay, weekDays, startHour, endHour]);
 
   const handleScheduleTask = (taskId, slot) => {
     if (!todos || !onUpdateTodos) return;
@@ -352,12 +363,10 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                         <button
                           key={`free-${pi}`}
                           onClick={() => setSelectedFreeSlot(period)}
-                          className="absolute left-1 right-1 z-[1] rounded-lg border-2 border-dashed border-slate-200 hover:border-sage hover:bg-sage/5 transition-smooth flex items-center justify-center group"
+                          className="absolute left-1 right-1 z-[1] rounded-lg hover:bg-sage/5 transition-smooth flex items-center justify-center group"
                           style={{ top, height }}
                         >
-                          <span className="text-xs font-medium text-navy/30 group-hover:text-sage transition-smooth">
-                            Click to schedule task
-                          </span>
+                          <Plus size={20} className="text-sage opacity-0 group-hover:opacity-100 transition-smooth" />
                         </button>
                       );
                     })}
@@ -377,15 +386,8 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                       return (
                         <div
                           key={`task-${task.id}`}
-                          className="absolute left-1 right-1 z-[2] bg-white border-l-4 rounded-lg shadow-sm p-2 cursor-pointer hover:shadow-md transition-smooth"
+                          className="absolute left-1 right-1 z-[2] bg-white border-l-4 rounded-lg shadow-sm p-2 group hover:shadow-md transition-smooth"
                           style={{ top, height, borderLeftColor: color, minHeight: 40 }}
-                          onClick={() => {
-                            if (window.confirm('Remove this task from schedule?')) {
-                              onUpdateTodos(todos.map(t => 
-                                t.id === task.id ? { ...t, scheduledSlot: null } : t
-                              ));
-                            }
-                          }}
                         >
                           <div className="flex items-start gap-2 h-full">
                             <div className="flex-1 min-w-0">
@@ -396,6 +398,17 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                                 {task.priority} priority
                               </p>
                             </div>
+                            <button
+                              onClick={() => {
+                                onUpdateTodos(todos.map(t => 
+                                  t.id === task.id ? { ...t, scheduledSlot: null } : t
+                                ));
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-terracotta/10 text-navy/40 hover:text-terracotta transition-smooth"
+                              title="Remove from schedule"
+                            >
+                              <X size={14} />
+                            </button>
                           </div>
                         </div>
                       );
