@@ -39,6 +39,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
   const [selectedFreeSlot, setSelectedFreeSlot] = useState(null);
   const [stackManagerData, setStackManagerData] = useState(null); // { slot, tasks }
+  const [showTaskScheduler, setShowTaskScheduler] = useState(false); // For adding tasks to existing stack
 
   // Update stack manager data when todos changes
   React.useEffect(() => {
@@ -191,6 +192,9 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } 
         : t
     ));
+    
+    // Close the task scheduler
+    setShowTaskScheduler(false);
     setSelectedFreeSlot(null);
   };
 
@@ -416,8 +420,8 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         </div>
       </div>
 
-      {/* Panels */}
-      {selectedLesson && (
+      {/* Panels - only one should be visible at a time */}
+      {selectedLesson ? (
         <LessonPanel
           lesson={selectedLesson}
           timetableData={timetableData}
@@ -425,18 +429,24 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           onUpdateInstance={onUpdateInstance}
           onClose={() => setSelectedLesson(null)}
         />
-      )}
-
-      {selectedFreeSlot && todos && onUpdateTodos && (
+      ) : showTaskScheduler && selectedFreeSlot && todos && onUpdateTodos ? (
+        <TaskSchedulePanel
+          slot={selectedFreeSlot}
+          todos={todos}
+          onScheduleTask={handleScheduleTask}
+          onClose={() => {
+            setShowTaskScheduler(false);
+            setSelectedFreeSlot(null);
+          }}
+        />
+      ) : selectedFreeSlot && todos && onUpdateTodos ? (
         <TaskSchedulePanel
           slot={selectedFreeSlot}
           todos={todos}
           onScheduleTask={handleScheduleTask}
           onClose={() => setSelectedFreeSlot(null)}
         />
-      )}
-
-      {stackManagerData && (
+      ) : stackManagerData ? (
         <TaskStackManager
           slot={stackManagerData.slot}
           tasks={stackManagerData.tasks}
@@ -444,12 +454,15 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           onRemoveTask={handleRemoveTaskSchedule}
           onToggleComplete={handleToggleTaskComplete}
           onAddMore={(slot) => {
-            setStackManagerData(null);
             setSelectedFreeSlot(slot);
+            setShowTaskScheduler(true);
           }}
-          onClose={() => setStackManagerData(null)}
+          onClose={() => {
+            setStackManagerData(null);
+            setShowTaskScheduler(false);
+          }}
         />
-      )}
+      ) : null}
     </div>
   );
 }
