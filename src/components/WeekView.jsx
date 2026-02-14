@@ -10,6 +10,7 @@ import {
 import DayColumn from './DayColumn';
 import LessonPanel from './LessonPanel';
 import TaskSchedulePanel from './TaskSchedulePanel';
+import TaskStackManager from './TaskStackManager';
 import {
   getWeekDays,
   getMonday,
@@ -37,6 +38,25 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   const [viewMode, setViewMode] = useState('week');
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
   const [selectedFreeSlot, setSelectedFreeSlot] = useState(null);
+  const [stackManagerData, setStackManagerData] = useState(null); // { slot, tasks }
+
+  // Update stack manager data when todos changes
+  React.useEffect(() => {
+    if (!stackManagerData || !todos) return;
+    
+    // Reconstruct the tasks array with updated data
+    const taskIds = stackManagerData.tasks.map(t => t.id);
+    const updatedTasks = todos
+      .filter(t => taskIds.includes(t.id))
+      .sort((a, b) => (a.stackOrder || 0) - (b.stackOrder || 0));
+    
+    if (updatedTasks.length > 0) {
+      setStackManagerData({
+        slot: stackManagerData.slot,
+        tasks: updatedTasks
+      });
+    }
+  }, [todos]);
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
@@ -148,19 +168,67 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
 
   const handleScheduleTask = (taskId, slot) => {
     if (!todos || !onUpdateTodos) return;
-    const serializedSlot = { ...slot, date: slot.date.toISOString() };
-    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: serializedSlot } : t));
+    // Handle both Date objects and ISO strings
+    const serializedSlot = {
+      ...slot,
+      date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
+    };
+    // Get the highest stackOrder for this slot
+    const tasksInSlot = todos.filter(t => {
+      if (!t.scheduledSlot) return false;
+      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
+      const slotDateStr = serializedSlot.date;
+      return tDate === slotDateStr && 
+             t.scheduledSlot.startMinutes === slot.startMinutes &&
+             t.scheduledSlot.endMinutes === slot.endMinutes;
+    });
+    const maxOrder = tasksInSlot.length > 0 
+      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
+      : -1;
+    
+    onUpdateTodos(todos.map(t => 
+      t.id === taskId 
+        ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } 
+        : t
+    ));
     setSelectedFreeSlot(null);
   };
 
   const handleToggleTaskComplete = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
+    const updatedTodos = todos.map(t => {
+      if (t.id !== taskId) return t;
+      const newCompleted = !t.completed;
+      // If completing a task, move it to the end of its stack
+      if (newCompleted && t.scheduledSlot) {
+        return { ...t, completed: newCompleted, stackOrder: Date.now() };
+      }
+      return { ...t, completed: newCompleted };
+    });
+    onUpdateTodos(updatedTodos);
   };
 
   const handleRemoveTaskSchedule = (taskId) => {
     if (!todos || !onUpdateTodos) return;
     onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: null } : t));
+  };
+
+  const handleOpenStackManager = (slotKey, tasks) => {
+    const firstTask = tasks[0];
+    setStackManagerData({ slot: firstTask.scheduledSlot, tasks });
+  };
+
+  const handleReorderStack = (reorderedTasks) => {
+    if (!todos || !onUpdateTodos) return;
+    // Update stack order based on position
+    const taskMap = new Map(reorderedTasks.map((task, index) => [task.id, index]));
+    const updatedTodos = todos.map(t => {
+      if (taskMap.has(t.id)) {
+        return { ...t, stackOrder: taskMap.get(t.id) };
+      }
+      return t;
+    });
+    onUpdateTodos(updatedTodos);
   };
 
   const hasInstanceData = (lesson) => {
@@ -304,13 +372,20 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                 const duties = dutiesByDay[dayNum] || [];
                 const freePeriods = freePeriodsWithTasks[dayNum] || [];
                 
-                const scheduledTasksForDay = (todos || []).filter(t => {
-                  if (!t.scheduledSlot || t.completed) return false;
-                  const slotDate = typeof t.scheduledSlot.date === 'string' 
-                    ? new Date(t.scheduledSlot.date) 
-                    : t.scheduledSlot.date;
-                  return slotDate.toDateString() === day.toDateString();
-                });
+                const scheduledTasksForDay = (todos || [])
+                  .filter(t => {
+                    if (!t.scheduledSlot) return false;
+                    const slotDate = typeof t.scheduledSlot.date === 'string' 
+                      ? new Date(t.scheduledSlot.date) 
+                      : t.scheduledSlot.date;
+                    return slotDate.toDateString() === day.toDateString();
+                  })
+                  .sort((a, b) => {
+                    // Sort by stack order (completed tasks go to end)
+                    if (a.completed && !b.completed) return 1;
+                    if (!a.completed && b.completed) return -1;
+                    return (a.stackOrder || 0) - (b.stackOrder || 0);
+                  });
 
                 return (
                   <DayColumn
@@ -330,7 +405,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                     onLessonClick={handleLessonClick}
                     onSelectFreeSlot={setSelectedFreeSlot}
                     onToggleTaskComplete={handleToggleTaskComplete}
-                    onRemoveTaskSchedule={handleRemoveTaskSchedule}
+                    onOpenStackManager={handleOpenStackManager}
                     hasInstanceData={hasInstanceData}
                     getLessonInstanceData={getLessonInstanceData}
                   />
@@ -358,6 +433,21 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           todos={todos}
           onScheduleTask={handleScheduleTask}
           onClose={() => setSelectedFreeSlot(null)}
+        />
+      )}
+
+      {stackManagerData && (
+        <TaskStackManager
+          slot={stackManagerData.slot}
+          tasks={stackManagerData.tasks}
+          onReorder={handleReorderStack}
+          onRemoveTask={handleRemoveTaskSchedule}
+          onToggleComplete={handleToggleTaskComplete}
+          onAddMore={(slot) => {
+            setStackManagerData(null);
+            setSelectedFreeSlot(slot);
+          }}
+          onClose={() => setStackManagerData(null)}
         />
       )}
     </div>

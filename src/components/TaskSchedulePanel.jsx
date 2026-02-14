@@ -8,7 +8,7 @@ const PRIORITIES = {
 };
 
 export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose }) {
-  // Get unscheduled tasks
+  // Get unscheduled tasks - they can be added to any slot
   const unscheduledTasks = todos.filter(t => !t.scheduledSlot && !t.completed);
 
   const formatMinutesToTime = (minutes) => {
@@ -25,6 +25,9 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
     return `${mins}m`;
   };
 
+  // Handle both Date objects and ISO strings
+  const slotDate = typeof slot.date === 'string' ? new Date(slot.date) : slot.date;
+
   return (
     <div className="w-80 h-full border-l border-slate-200 bg-white flex flex-col">
       {/* Header */}
@@ -32,7 +35,7 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
         <div className="flex-1">
           <h3 className="font-serif text-lg font-bold text-navy">Schedule Task</h3>
           <p className="text-xs text-navy/50 mt-1">
-            {slot.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {slotDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
           <p className="text-xs text-navy/40 mt-0.5">
             {formatMinutesToTime(slot.startMinutes)} – {formatMinutesToTime(slot.endMinutes)} ({formatDuration(slot.duration)})
