@@ -390,9 +390,24 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                           style={{ top, height, borderLeftColor: color, minHeight: 40 }}
                         >
                           <div className="flex items-start gap-2 h-full">
+                            <button
+                              onClick={() => {
+                                onUpdateTodos(todos.map(t => 
+                                  t.id === task.id ? { ...t, completed: !t.completed } : t
+                                ));
+                              }}
+                              className="mt-0.5 shrink-0 w-4 h-4 rounded border-2 border-slate-300 hover:border-sage hover:bg-sage/10 transition-smooth flex items-center justify-center"
+                              style={{ borderColor: task.completed ? color : undefined, backgroundColor: task.completed ? color : undefined }}
+                            >
+                              {task.completed && (
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              )}
+                            </button>
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-navy truncate">
-                                ✓ {task.text}
+                              <p className={`text-xs font-semibold truncate ${task.completed ? 'text-navy/50 line-through' : 'text-navy'}`}>
+                                {task.text}
                               </p>
                               <p className="text-[10px] text-navy/40 mt-0.5">
                                 {task.priority} priority
