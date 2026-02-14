@@ -6,11 +6,8 @@ import {
   RotateCcw,
   Calendar,
   CalendarRange,
-  Plus,
-  X,
 } from 'lucide-react';
-import LessonCard from './LessonCard';
-import DutyCard from './DutyCard';
+import DayColumn from './DayColumn';
 import LessonPanel from './LessonPanel';
 import TaskSchedulePanel from './TaskSchedulePanel';
 import {
@@ -29,7 +26,6 @@ import {
   getDutiesForWeek,
   mergeConsecutiveLessons,
   getTimeRange,
-  getClassColor,
   lessonInstanceKey,
 } from '../utils/timetable';
 
@@ -38,9 +34,9 @@ const PX_PER_MINUTE = 1.8;
 export default function WeekView({ timetableData, lessonInstances, onUpdateInstance, onClearData, todos, onUpdateTodos }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLesson, setSelectedLesson] = useState(null);
-  const [viewMode, setViewMode] = useState('week'); // 'week' or 'day'
-  const [selectedDayIndex, setSelectedDayIndex] = useState(null); // 0-4 for Mon-Fri
-  const [selectedFreeSlot, setSelectedFreeSlot] = useState(null); // For task scheduling
+  const [viewMode, setViewMode] = useState('week');
+  const [selectedDayIndex, setSelectedDayIndex] = useState(null);
+  const [selectedFreeSlot, setSelectedFreeSlot] = useState(null);
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
@@ -84,36 +80,15 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     return labels;
   }, [startHour, endHour]);
 
-  const timeToTop = (timeStr) => (timeToMinutes(timeStr) - gridStartMin) * PX_PER_MINUTE;
-  const durationToHeight = (s, e) => (timeToMinutes(e) - timeToMinutes(s)) * PX_PER_MINUTE;
-
-  // For day view, use selected day or default to today
   const activeDayIndex = viewMode === 'day' && selectedDayIndex !== null 
     ? selectedDayIndex 
     : weekDays.findIndex(day => isToday(day));
   
   const selectedDay = activeDayIndex !== -1 ? weekDays[activeDayIndex] : null;
-  const selectedDayNum = selectedDay ? (selectedDay.getDay() === 0 ? 7 : selectedDay.getDay()) : null;
-  
-  const dayViewLessons = selectedDayNum !== null ? (lessonsByDay[selectedDayNum] || []) : [];
-  const dayViewDuties = selectedDayNum !== null ? (dutiesByDay[selectedDayNum] || []) : [];
 
-  const totalLessons = viewMode === 'day' 
-    ? dayViewLessons.length 
+  const totalLessons = viewMode === 'day' && selectedDay
+    ? (lessonsByDay[selectedDay.getDay() === 0 ? 7 : selectedDay.getDay()] || []).length
     : Object.values(lessonsByDay).reduce((sum, l) => sum + l.length, 0);
-
-  const goToPrevWeek = () => setCurrentDate((d) => shiftWeek(d, -1));
-  const goToNextWeek = () => setCurrentDate((d) => shiftWeek(d, 1));
-  const goToToday = () => setCurrentDate(new Date());
-
-  const handleLessonClick = (lesson) => {
-    setSelectedLesson(lesson);
-  };
-
-  const handleDayClick = (dayIndex) => {
-    setSelectedDayIndex(dayIndex);
-    setViewMode('day');
-  };
 
   // Detect free periods
   const freePeriodsWithTasks = useMemo(() => {
@@ -126,48 +101,33 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
       if (dayIndex < 0 || dayIndex >= weekDays.length) return;
       
       const date = weekDays[dayIndex];
-      
-      // Combine lessons AND duties as occupied time
       const occupied = [
-        ...lessons.map(l => ({
-          start: timeToMinutes(l.startTime),
-          end: timeToMinutes(l.endTime),
-        })),
-        ...duties.map(d => ({
-          start: timeToMinutes(d.startTime),
-          end: timeToMinutes(d.endTime),
-        }))
+        ...lessons.map(l => ({ start: timeToMinutes(l.startTime), end: timeToMinutes(l.endTime) })),
+        ...duties.map(d => ({ start: timeToMinutes(d.startTime), end: timeToMinutes(d.endTime) }))
       ].sort((a, b) => a.start - b.start);
 
       let currentTime = startHour * 60;
       const dayPeriods = [];
 
       occupied.forEach(slot => {
-        if (currentTime < slot.start) {
-          const duration = slot.start - currentTime;
-          if (duration >= 30) {
-            dayPeriods.push({
-              date,
-              startMinutes: currentTime,
-              endMinutes: slot.start,
-              duration,
-            });
-          }
+        if (currentTime < slot.start && (slot.start - currentTime) >= 30) {
+          dayPeriods.push({
+            date,
+            startMinutes: currentTime,
+            endMinutes: slot.start,
+            duration: slot.start - currentTime,
+          });
         }
         currentTime = Math.max(currentTime, slot.end);
       });
 
-      // End of day
-      if (currentTime < endHour * 60) {
-        const duration = (endHour * 60) - currentTime;
-        if (duration >= 30) {
-          dayPeriods.push({
-            date,
-            startMinutes: currentTime,
-            endMinutes: endHour * 60,
-            duration,
-          });
-        }
+      if (currentTime < endHour * 60 && ((endHour * 60) - currentTime) >= 30) {
+        dayPeriods.push({
+          date,
+          startMinutes: currentTime,
+          endMinutes: endHour * 60,
+          duration: (endHour * 60) - currentTime,
+        });
       }
 
       periods[dayNum] = dayPeriods;
@@ -176,37 +136,48 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     return periods;
   }, [lessonsByDay, dutiesByDay, weekDays, startHour, endHour]);
 
+  const goToPrevWeek = () => setCurrentDate((d) => shiftWeek(d, -1));
+  const goToNextWeek = () => setCurrentDate((d) => shiftWeek(d, 1));
+  const goToToday = () => setCurrentDate(new Date());
+
+  const handleLessonClick = (lesson) => setSelectedLesson(lesson);
+  const handleDayClick = (dayIndex) => {
+    setSelectedDayIndex(dayIndex);
+    setViewMode('day');
+  };
+
   const handleScheduleTask = (taskId, slot) => {
     if (!todos || !onUpdateTodos) return;
-    // Store slot with date as ISO string for proper serialization
-    const serializedSlot = {
-      ...slot,
-      date: slot.date.toISOString(),
-    };
-    onUpdateTodos(
-      todos.map(t =>
-        t.id === taskId ? { ...t, scheduledSlot: serializedSlot } : t
-      )
-    );
+    const serializedSlot = { ...slot, date: slot.date.toISOString() };
+    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: serializedSlot } : t));
     setSelectedFreeSlot(null);
   };
 
-  // Check if a lesson instance has any data saved
+  const handleToggleTaskComplete = (taskId) => {
+    if (!todos || !onUpdateTodos) return;
+    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
+  };
+
+  const handleRemoveTaskSchedule = (taskId) => {
+    if (!todos || !onUpdateTodos) return;
+    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: null } : t));
+  };
+
   const hasInstanceData = (lesson) => {
     const key = lessonInstanceKey(lesson.classId, formatDateISO(lesson.date));
     const inst = lessonInstances[key];
     return inst && (inst.title || inst.notes || (inst.links && inst.links.length > 0));
   };
 
-  // Get lesson instance data
   const getLessonInstanceData = (lesson) => {
     const key = lessonInstanceKey(lesson.classId, formatDateISO(lesson.date));
     return lessonInstances[key];
   };
 
+  const daysToRender = viewMode === 'day' && selectedDay ? [selectedDay] : weekDays;
+
   return (
     <div className="flex-1 flex min-h-0">
-      {/* Main grid area */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {/* Header */}
         <header className="shrink-0 px-8 py-5 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-sm z-10">
@@ -223,10 +194,8 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
               </p>
             </div>
             {weekNum && (
-              <span className={`
-                inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold
-                ${weekNum === 1 ? 'bg-[#81B29A]/15 text-[#81B29A]' : 'bg-[#E07A5F]/15 text-[#E07A5F]'}
-              `}>
+              <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold
+                ${weekNum === 1 ? 'bg-[#81B29A]/15 text-[#81B29A]' : 'bg-[#E07A5F]/15 text-[#E07A5F]'}`}>
                 Week {weekNum}
               </span>
             )}
@@ -238,22 +207,16 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
               <button 
                 onClick={() => setViewMode('week')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-smooth ${
-                  viewMode === 'week' 
-                    ? 'bg-white shadow-sm text-navy' 
-                    : 'text-navy/50 hover:text-navy'
-                }`}
-              >
+                  viewMode === 'week' ? 'bg-white shadow-sm text-navy' : 'text-navy/50 hover:text-navy'
+                }`}>
                 <CalendarRange size={16} />
                 Week
               </button>
               <button 
                 onClick={() => setViewMode('day')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-smooth ${
-                  viewMode === 'day' 
-                    ? 'bg-white shadow-sm text-navy' 
-                    : 'text-navy/50 hover:text-navy'
-                }`}
-              >
+                  viewMode === 'day' ? 'bg-white shadow-sm text-navy' : 'text-navy/50 hover:text-navy'
+                }`}>
                 <Calendar size={16} />
                 Day
               </button>
@@ -287,7 +250,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           <div className="sticky top-0 z-10 bg-cream/95 backdrop-blur-sm border-b border-slate-100">
             <div className="flex">
               <div className="w-16 shrink-0" />
-              <div className={`flex-1 grid gap-2 px-2 py-3 ${viewMode === 'day' ? 'grid-cols-5' : 'grid-cols-5'}`}>
+              <div className={`flex-1 grid gap-2 px-2 py-3 grid-cols-5`}>
                 {weekDays.map((day, i) => {
                   const today = isToday(day);
                   const isActive = viewMode === 'day' && i === selectedDayIndex;
@@ -297,8 +260,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                       onClick={() => handleDayClick(i)}
                       className={`text-center py-2 px-2 rounded-xl transition-smooth cursor-pointer hover:bg-[#81B29A]/20 ${
                         isActive ? 'bg-[#81B29A]/20 ring-2 ring-[#81B29A]/30' : today ? 'bg-[#81B29A]/10' : ''
-                      }`}
-                    >
+                      }`}>
                       <p className={`text-xs font-semibold uppercase tracking-wider ${
                         isActive ? 'text-sage' : today ? 'text-sage' : 'text-navy/30'
                       }`}>
@@ -328,7 +290,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
               ))}
             </div>
 
-            {/* Day columns with lessons */}
+            {/* Day columns */}
             <div className={`flex-1 grid gap-2 px-2 relative ${viewMode === 'day' ? 'grid-cols-1' : 'grid-cols-5'}`}>
               {/* Hour lines */}
               {hourLabels.map((h) => (
@@ -336,17 +298,14 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                   style={{ top: (h - startHour) * 60 * PX_PER_MINUTE }} />
               ))}
 
-              {(viewMode === 'day' && selectedDay ? [selectedDay] : weekDays).map((day, i) => {
+              {daysToRender.map((day, i) => {
                 const dayNum = day.getDay() === 0 ? 7 : day.getDay();
                 const lessons = lessonsByDay[dayNum] || [];
                 const duties = dutiesByDay[dayNum] || [];
                 const freePeriods = freePeriodsWithTasks[dayNum] || [];
-                const today = isToday(day);
-
-                // Get scheduled tasks for this day
+                
                 const scheduledTasksForDay = (todos || []).filter(t => {
                   if (!t.scheduledSlot || t.completed) return false;
-                  // Handle both Date objects and ISO strings
                   const slotDate = typeof t.scheduledSlot.date === 'string' 
                     ? new Date(t.scheduledSlot.date) 
                     : t.scheduledSlot.date;
@@ -354,118 +313,27 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                 });
 
                 return (
-                  <div key={i} className={`relative ${today ? 'bg-[#81B29A]/[0.03] rounded-2xl' : ''}`} style={{ height: gridHeight }}>
-                    {/* Free periods as clickable areas */}
-                    {freePeriods.map((period, pi) => {
-                      const top = (period.startMinutes - gridStartMin) * PX_PER_MINUTE;
-                      const height = (period.endMinutes - period.startMinutes) * PX_PER_MINUTE;
-                      return (
-                        <button
-                          key={`free-${pi}`}
-                          onClick={() => setSelectedFreeSlot(period)}
-                          className="absolute left-1 right-1 z-[1] rounded-lg hover:bg-sage/5 transition-smooth flex items-center justify-center group"
-                          style={{ top, height }}
-                        >
-                          <Plus size={20} className="text-sage opacity-0 group-hover:opacity-100 transition-smooth" />
-                        </button>
-                      );
-                    })}
-
-                    {/* Scheduled tasks */}
-                    {scheduledTasksForDay.map((task) => {
-                      const slot = task.scheduledSlot;
-                      const top = (slot.startMinutes - gridStartMin) * PX_PER_MINUTE;
-                      const height = (slot.endMinutes - slot.startMinutes) * PX_PER_MINUTE;
-                      const priorityColors = {
-                        high: '#E07A5F',
-                        medium: '#F4845F',
-                        low: '#81B29A',
-                      };
-                      const color = priorityColors[task.priority] || '#81B29A';
-                      
-                      return (
-                        <div
-                          key={`task-${task.id}`}
-                          className="absolute left-1 right-1 z-[2] bg-white border-l-4 rounded-lg shadow-sm p-2 group hover:shadow-md transition-smooth"
-                          style={{ top, height, borderLeftColor: color, minHeight: 40 }}
-                        >
-                          <div className="flex items-start gap-2 h-full">
-                            <button
-                              onClick={() => {
-                                onUpdateTodos(todos.map(t => 
-                                  t.id === task.id ? { ...t, completed: !t.completed } : t
-                                ));
-                              }}
-                              className="mt-0.5 shrink-0 w-4 h-4 rounded border-2 border-slate-300 hover:border-sage hover:bg-sage/10 transition-smooth flex items-center justify-center"
-                              style={{ borderColor: task.completed ? color : undefined, backgroundColor: task.completed ? color : undefined }}
-                            >
-                              {task.completed && (
-                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              )}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-xs font-semibold truncate ${task.completed ? 'text-navy/50 line-through' : 'text-navy'}`}>
-                                {task.text}
-                              </p>
-                              <p className="text-[10px] text-navy/40 mt-0.5">
-                                {task.priority} priority
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => {
-                                onUpdateTodos(todos.map(t => 
-                                  t.id === task.id ? { ...t, scheduledSlot: null } : t
-                                ));
-                              }}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-terracotta/10 text-navy/40 hover:text-terracotta transition-smooth"
-                              title="Remove from schedule"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {duties.map((duty, di) => {
-                      const top = timeToTop(duty.startTime);
-                      const height = durationToHeight(duty.startTime, duty.endTime);
-                      return (
-                        <div key={`duty-${di}`} className="absolute left-1 right-1 z-[2]" style={{ top, height, minHeight: 28 }}>
-                          <DutyCard duty={duty} />
-                        </div>
-                      );
-                    })}
-
-                    {lessons.map((lesson) => {
-                      const top = timeToTop(lesson.startTime);
-                      const height = durationToHeight(lesson.startTime, lesson.endTime);
-                      const accent = getClassColor(lesson.classId, timetableData.classes);
-                      const hasData = hasInstanceData(lesson);
-                      const instanceData = getLessonInstanceData(lesson);
-                      const isSelected = selectedLesson &&
-                        selectedLesson.classId === lesson.classId &&
-                        formatDateISO(selectedLesson.date) === formatDateISO(lesson.date);
-                      
-                      return (
-                        <div key={lesson.id}
-                          className={`absolute left-1 right-1 z-[3] ${isSelected ? 'ring-2 ring-offset-1 rounded-xl' : ''}`}
-                          style={{ top, height, ...(isSelected ? { ringColor: accent } : {}) }}>
-                          <LessonCard
-                            lesson={lesson}
-                            height={height}
-                            accent={accent}
-                            hasData={hasData}
-                            onClick={handleLessonClick}
-                            showTitle={viewMode === 'day'}
-                            instanceData={instanceData}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <DayColumn
+                    key={i}
+                    day={day}
+                    dayNum={dayNum}
+                    lessons={lessons}
+                    duties={duties}
+                    freePeriods={freePeriods}
+                    scheduledTasks={scheduledTasksForDay}
+                    timetableData={timetableData}
+                    lessonInstances={lessonInstances}
+                    todos={todos}
+                    gridStartMin={gridStartMin}
+                    gridHeight={gridHeight}
+                    viewMode={viewMode}
+                    onLessonClick={handleLessonClick}
+                    onSelectFreeSlot={setSelectedFreeSlot}
+                    onToggleTaskComplete={handleToggleTaskComplete}
+                    onRemoveTaskSchedule={handleRemoveTaskSchedule}
+                    hasInstanceData={hasInstanceData}
+                    getLessonInstanceData={getLessonInstanceData}
+                  />
                 );
               })}
             </div>
@@ -473,7 +341,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         </div>
       </div>
 
-      {/* Lesson detail panel */}
+      {/* Panels */}
       {selectedLesson && (
         <LessonPanel
           lesson={selectedLesson}
@@ -484,7 +352,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         />
       )}
 
-      {/* Task scheduling panel */}
       {selectedFreeSlot && todos && onUpdateTodos && (
         <TaskSchedulePanel
           slot={selectedFreeSlot}
