@@ -10,6 +10,7 @@ import {
 import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
 import LessonPanel from './LessonPanel';
+import TaskSchedulePanel from './TaskSchedulePanel';
 import {
   getWeekDays,
   getMonday,
@@ -32,11 +33,12 @@ import {
 
 const PX_PER_MINUTE = 1.8;
 
-export default function WeekView({ timetableData, lessonInstances, onUpdateInstance, onClearData }) {
+export default function WeekView({ timetableData, lessonInstances, onUpdateInstance, onClearData, todos, onUpdateTodos }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [viewMode, setViewMode] = useState('week'); // 'week' or 'day'
   const [selectedDayIndex, setSelectedDayIndex] = useState(null); // 0-4 for Mon-Fri
+  const [selectedFreeSlot, setSelectedFreeSlot] = useState(null); // For task scheduling
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
@@ -109,6 +111,73 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   const handleDayClick = (dayIndex) => {
     setSelectedDayIndex(dayIndex);
     setViewMode('day');
+  };
+
+  // Detect free periods
+  const freePeriodsWithTasks = useMemo(() => {
+    const periods = {};
+    
+    Object.keys(lessonsByDay).forEach(dayNum => {
+      const lessons = lessonsByDay[dayNum] || [];
+      const dayIndex = parseInt(dayNum) - 1;
+      if (dayIndex < 0 || dayIndex >= weekDays.length) return;
+      
+      const date = weekDays[dayIndex];
+      const occupied = lessons.map(l => ({
+        start: timeToMinutes(l.startTime),
+        end: timeToMinutes(l.endTime),
+      })).sort((a, b) => a.start - b.start);
+
+      let currentTime = startHour * 60;
+      const dayPeriods = [];
+
+      occupied.forEach(slot => {
+        if (currentTime < slot.start) {
+          const duration = slot.start - currentTime;
+          if (duration >= 30) {
+            dayPeriods.push({
+              date,
+              startMinutes: currentTime,
+              endMinutes: slot.start,
+              duration,
+            });
+          }
+        }
+        currentTime = Math.max(currentTime, slot.end);
+      });
+
+      // End of day
+      if (currentTime < endHour * 60) {
+        const duration = (endHour * 60) - currentTime;
+        if (duration >= 30) {
+          dayPeriods.push({
+            date,
+            startMinutes: currentTime,
+            endMinutes: endHour * 60,
+            duration,
+          });
+        }
+      }
+
+      periods[dayNum] = dayPeriods;
+    });
+
+    return periods;
+  }, [lessonsByDay, weekDays, startHour, endHour]);
+
+  const handleScheduleTask = (taskId, slot) => {
+    if (!todos || !onUpdateTodos) return;
+    // Store slot with date as ISO string for proper serialization
+    const serializedSlot = {
+      ...slot,
+      date: slot.date.toISOString(),
+    };
+    onUpdateTodos(
+      todos.map(t =>
+        t.id === taskId ? { ...t, scheduledSlot: serializedSlot } : t
+      )
+    );
+    setSelectedFreeSlot(null);
   };
 
   // Check if a lesson instance has any data saved
@@ -260,10 +329,78 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                 const dayNum = day.getDay() === 0 ? 7 : day.getDay();
                 const lessons = lessonsByDay[dayNum] || [];
                 const duties = dutiesByDay[dayNum] || [];
+                const freePeriods = freePeriodsWithTasks[dayNum] || [];
                 const today = isToday(day);
+
+                // Get scheduled tasks for this day
+                const scheduledTasksForDay = (todos || []).filter(t => {
+                  if (!t.scheduledSlot || t.completed) return false;
+                  // Handle both Date objects and ISO strings
+                  const slotDate = typeof t.scheduledSlot.date === 'string' 
+                    ? new Date(t.scheduledSlot.date) 
+                    : t.scheduledSlot.date;
+                  return slotDate.toDateString() === day.toDateString();
+                });
 
                 return (
                   <div key={i} className={`relative ${today ? 'bg-[#81B29A]/[0.03] rounded-2xl' : ''}`} style={{ height: gridHeight }}>
+                    {/* Free periods as clickable areas */}
+                    {freePeriods.map((period, pi) => {
+                      const top = (period.startMinutes - gridStartMin) * PX_PER_MINUTE;
+                      const height = (period.endMinutes - period.startMinutes) * PX_PER_MINUTE;
+                      return (
+                        <button
+                          key={`free-${pi}`}
+                          onClick={() => setSelectedFreeSlot(period)}
+                          className="absolute left-1 right-1 z-[1] rounded-lg border-2 border-dashed border-slate-200 hover:border-sage hover:bg-sage/5 transition-smooth flex items-center justify-center group"
+                          style={{ top, height }}
+                        >
+                          <span className="text-xs font-medium text-navy/30 group-hover:text-sage transition-smooth">
+                            Click to schedule task
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {/* Scheduled tasks */}
+                    {scheduledTasksForDay.map((task) => {
+                      const slot = task.scheduledSlot;
+                      const top = (slot.startMinutes - gridStartMin) * PX_PER_MINUTE;
+                      const height = (slot.endMinutes - slot.startMinutes) * PX_PER_MINUTE;
+                      const priorityColors = {
+                        high: '#E07A5F',
+                        medium: '#F4845F',
+                        low: '#81B29A',
+                      };
+                      const color = priorityColors[task.priority] || '#81B29A';
+                      
+                      return (
+                        <div
+                          key={`task-${task.id}`}
+                          className="absolute left-1 right-1 z-[2] bg-white border-l-4 rounded-lg shadow-sm p-2 cursor-pointer hover:shadow-md transition-smooth"
+                          style={{ top, height, borderLeftColor: color, minHeight: 40 }}
+                          onClick={() => {
+                            if (window.confirm('Remove this task from schedule?')) {
+                              onUpdateTodos(todos.map(t => 
+                                t.id === task.id ? { ...t, scheduledSlot: null } : t
+                              ));
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-2 h-full">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-navy truncate">
+                                ✓ {task.text}
+                              </p>
+                              <p className="text-[10px] text-navy/40 mt-0.5">
+                                {task.priority} priority
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
                     {duties.map((duty, di) => {
                       const top = timeToTop(duty.startTime);
                       const height = durationToHeight(duty.startTime, duty.endTime);
@@ -316,6 +453,16 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           lessonInstances={lessonInstances}
           onUpdateInstance={onUpdateInstance}
           onClose={() => setSelectedLesson(null)}
+        />
+      )}
+
+      {/* Task scheduling panel */}
+      {selectedFreeSlot && todos && onUpdateTodos && (
+        <TaskSchedulePanel
+          slot={selectedFreeSlot}
+          todos={todos}
+          onScheduleTask={handleScheduleTask}
+          onClose={() => setSelectedFreeSlot(null)}
         />
       )}
     </div>

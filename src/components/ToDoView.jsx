@@ -1,17 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Plus,
   Check,
   Circle,
   Clock,
   Calendar,
-  ChevronRight,
   Trash2,
-  GripVertical,
-  AlertCircle,
+  X,
 } from 'lucide-react';
-import { formatDateISO, getWeekDays, isToday, timeToMinutes } from '../utils/dateHelpers';
-import { getLessonsForWeek, getTimeRange } from '../utils/timetable';
 
 // Priority levels with colors
 const PRIORITIES = {
@@ -23,72 +19,6 @@ const PRIORITIES = {
 export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
   const [newTaskText, setNewTaskText] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState('medium');
-  const [showScheduler, setShowScheduler] = useState(null);
-  const [currentDate] = useState(new Date());
-
-  const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
-  const lessonsByDay = useMemo(
-    () => getLessonsForWeek(timetableData, weekDays),
-    [timetableData, weekDays]
-  );
-
-  // Get free periods for scheduling
-  const freePeriods = useMemo(() => {
-    if (!timetableData || !timetableData.recurringLessons) return [];
-    
-    const { startHour, endHour } = getTimeRange(timetableData);
-    const periods = [];
-
-    weekDays.forEach((date, dayIndex) => {
-      const dayNum = date.getDay() === 0 ? 7 : date.getDay();
-      const lessons = lessonsByDay[dayNum] || [];
-      
-      // Build time slots for the day
-      const dayStart = startHour * 60;
-      const dayEnd = endHour * 60;
-      const occupied = lessons.map(l => ({
-        start: timeToMinutes(l.startTime),
-        end: timeToMinutes(l.endTime),
-      }));
-
-      // Find gaps
-      let currentTime = dayStart;
-      occupied.sort((a, b) => a.start - b.start);
-
-      occupied.forEach(slot => {
-        if (currentTime < slot.start) {
-          // Free period found
-          const duration = slot.start - currentTime;
-          if (duration >= 30) { // Only show gaps 30+ minutes
-            periods.push({
-              date,
-              dayIndex,
-              startMinutes: currentTime,
-              endMinutes: slot.start,
-              duration,
-            });
-          }
-        }
-        currentTime = Math.max(currentTime, slot.end);
-      });
-
-      // Check end of day
-      if (currentTime < dayEnd) {
-        const duration = dayEnd - currentTime;
-        if (duration >= 30) {
-          periods.push({
-            date,
-            dayIndex,
-            startMinutes: currentTime,
-            endMinutes: dayEnd,
-            duration,
-          });
-        }
-      }
-    });
-
-    return periods;
-  }, [timetableData, weekDays, lessonsByDay]);
 
   const handleAddTask = () => {
     if (!newTaskText.trim()) return;
@@ -99,7 +29,7 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
       priority: newTaskPriority,
       completed: false,
       createdAt: new Date().toISOString(),
-      scheduledSlot: null,
+      scheduledSlot: null, // Will be set from WeekView
     };
 
     onUpdateTodos([...todos, newTask]);
@@ -116,17 +46,6 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
 
   const handleDeleteTask = (taskId) => {
     onUpdateTodos(todos.filter(t => t.id !== taskId));
-  };
-
-  const handleScheduleTask = (taskId, slot) => {
-    onUpdateTodos(
-      todos.map(t =>
-        t.id === taskId
-          ? { ...t, scheduledSlot: slot }
-          : t
-      )
-    );
-    setShowScheduler(null);
   };
 
   const handleUnschedule = (taskId) => {
@@ -237,7 +156,7 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
                               <div className="flex items-center gap-1">
                                 <Clock size={12} />
                                 <span>
-                                  {slot.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · {formatMinutesToTime(slot.startMinutes)} - {formatMinutesToTime(slot.endMinutes)} ({formatDuration(slot.duration)})
+                                  {new Date(slot.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · {formatMinutesToTime(slot.startMinutes)} - {formatMinutesToTime(slot.endMinutes)} ({formatDuration(slot.duration)})
                                 </span>
                               </div>
                             )}
@@ -250,7 +169,7 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
                             className="p-2 rounded-lg hover:bg-sand text-navy/40 hover:text-navy transition-smooth"
                             title="Unschedule"
                           >
-                            <AlertCircle size={16} />
+                            <X size={16} />
                           </button>
                           <button
                             onClick={() => handleDeleteTask(task.id)}
@@ -302,13 +221,6 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => setShowScheduler(task.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-sage/10 text-sage text-xs font-medium transition-smooth"
-                          >
-                            <Calendar size={14} />
-                            Schedule
-                          </button>
-                          <button
                             onClick={() => handleDeleteTask(task.id)}
                             className="p-2 rounded-lg hover:bg-terracotta/10 text-navy/40 hover:text-terracotta transition-smooth"
                             title="Delete"
@@ -317,50 +229,13 @@ export default function ToDoView({ timetableData, todos, onUpdateTodos }) {
                           </button>
                         </div>
                       </div>
-
-                      {/* Scheduler panel */}
-                      {showScheduler === task.id && (
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                          <p className="text-xs font-semibold text-navy/60 mb-3">Choose a free period:</p>
-                          <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-                            {freePeriods.map((period, idx) => {
-                              const isPast = period.date < new Date().setHours(0, 0, 0, 0);
-                              return (
-                                <button
-                                  key={idx}
-                                  onClick={() => !isPast && handleScheduleTask(task.id, period)}
-                                  disabled={isPast}
-                                  className={`p-3 rounded-lg border text-left transition-smooth ${
-                                    isPast
-                                      ? 'border-slate-100 bg-slate-50 text-navy/30 cursor-not-allowed'
-                                      : 'border-slate-200 hover:border-sage hover:bg-sage/5'
-                                  }`}
-                                >
-                                  <p className={`text-xs font-semibold ${isPast ? 'text-navy/30' : 'text-navy/70'}`}>
-                                    {period.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                  </p>
-                                  <p className={`text-xs mt-1 ${isPast ? 'text-navy/20' : 'text-navy/50'}`}>
-                                    {formatMinutesToTime(period.startMinutes)} - {formatMinutesToTime(period.endMinutes)}
-                                  </p>
-                                  <p className={`text-xs font-medium mt-1 ${isPast ? 'text-navy/20' : 'text-sage'}`}>
-                                    {formatDuration(period.duration)} free
-                                  </p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <button
-                            onClick={() => setShowScheduler(null)}
-                            className="mt-3 text-xs text-navy/50 hover:text-navy"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
               </div>
+              <p className="text-sm text-navy/40 italic">
+                💡 Schedule tasks by clicking on free periods in the Week View
+              </p>
             </div>
           )}
 

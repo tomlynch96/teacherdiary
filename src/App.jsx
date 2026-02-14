@@ -110,6 +110,8 @@ export default function App() {
             lessonInstances={lessonInstances}
             onUpdateInstance={handleUpdateInstance}
             onClearData={handleClearData}
+            todos={todos}
+            onUpdateTodos={handleUpdateTodos}
           />
         ) : currentView === 'class' ? (
           <ClassView
