@@ -259,6 +259,32 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
       return { ...t, completed: newCompleted };
     });
     onUpdateTodos(updatedTodos);
+    
+    // If stack manager is open, refresh it with updated tasks
+    if (stackManagerData) {
+      const slot = stackManagerData.slot;
+      const slotDateStr = typeof slot.date === 'string' ? slot.date : slot.date.toISOString();
+      const refreshedTasks = updatedTodos
+        .filter(t => {
+          if (!t.scheduledSlot) return false;
+          const tDate = typeof t.scheduledSlot.date === 'string' 
+            ? t.scheduledSlot.date 
+            : t.scheduledSlot.date.toISOString();
+          return tDate === slotDateStr && 
+                 t.scheduledSlot.startMinutes === slot.startMinutes &&
+                 t.scheduledSlot.endMinutes === slot.endMinutes;
+        })
+        .sort((a, b) => {
+          if (a.completed && !b.completed) return 1;
+          if (!a.completed && b.completed) return -1;
+          return (a.stackOrder || 0) - (b.stackOrder || 0);
+        });
+      
+      setStackManagerData({
+        slot: stackManagerData.slot,
+        tasks: refreshedTasks
+      });
+    }
   };
 
   const handleRemoveTaskSchedule = (taskId) => {
