@@ -51,9 +51,9 @@ export default function TaskStack({
         })}
 
         {/* Front card - clickable to open manager */}
-        <button
+        <div
           onClick={() => onOpenManager(slotKey, tasks)}
-          className="absolute left-0 right-0 top-0 bottom-0 bg-slate-100/60 backdrop-blur-sm border border-slate-300/40 rounded-lg hover:bg-slate-200/70 hover:border-slate-400/50 transition-smooth group w-full text-left"
+          className="absolute left-0 right-0 top-0 bottom-0 bg-slate-100/60 backdrop-blur-sm border border-slate-300/40 rounded-lg hover:bg-slate-200/70 hover:border-slate-400/50 transition-smooth group cursor-pointer"
           style={{ zIndex: 20 }}
         >
           <div className="flex items-center gap-2 h-full px-2 py-1.5">
@@ -85,7 +85,7 @@ export default function TaskStack({
               </div>
             )}
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );

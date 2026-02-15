@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, CheckSquare, Circle } from 'lucide-react';
 
 const PRIORITIES = {
@@ -7,7 +7,9 @@ const PRIORITIES = {
   low: { label: 'Low', color: '#81B29A', bgColor: '#81B29A15' },
 };
 
-export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose }) {
+export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onScheduleMultipleTasks, onClose }) {
+  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
+  
   // Get unscheduled tasks - they can be added to any slot
   const unscheduledTasks = todos.filter(t => !t.scheduledSlot && !t.completed);
 
@@ -25,6 +27,22 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
     return `${mins}m`;
   };
 
+  const toggleTaskSelection = (taskId) => {
+    setSelectedTaskIds(prev => 
+      prev.includes(taskId) 
+        ? prev.filter(id => id !== taskId)
+        : [...prev, taskId]
+    );
+  };
+
+  const handleScheduleSelected = () => {
+    if (selectedTaskIds.length === 0) return;
+    
+    // Use the batch scheduling function
+    onScheduleMultipleTasks(selectedTaskIds, slot);
+    setSelectedTaskIds([]);
+  };
+
   // Handle both Date objects and ISO strings
   const slotDate = typeof slot.date === 'string' ? new Date(slot.date) : slot.date;
 
@@ -33,13 +51,18 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
       {/* Header */}
       <div className="shrink-0 px-4 py-4 border-b border-slate-100 flex items-start justify-between">
         <div className="flex-1">
-          <h3 className="font-serif text-lg font-bold text-navy">Schedule Task</h3>
+          <h3 className="font-serif text-lg font-bold text-navy">Schedule Tasks</h3>
           <p className="text-xs text-navy/50 mt-1">
             {slotDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
           <p className="text-xs text-navy/40 mt-0.5">
             {formatMinutesToTime(slot.startMinutes)} – {formatMinutesToTime(slot.endMinutes)} ({formatDuration(slot.duration)})
           </p>
+          {selectedTaskIds.length > 0 && (
+            <p className="text-xs font-semibold text-sage mt-2">
+              {selectedTaskIds.length} task{selectedTaskIds.length !== 1 ? 's' : ''} selected
+            </p>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -60,20 +83,35 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
         ) : (
           <div className="space-y-2">
             <p className="text-xs font-semibold text-navy/50 uppercase tracking-wide mb-3">
-              Choose a task to schedule:
+              Click to select tasks:
             </p>
             {unscheduledTasks.map(task => {
               const priority = PRIORITIES[task.priority];
+              const isSelected = selectedTaskIds.includes(task.id);
               return (
                 <button
                   key={task.id}
-                  onClick={() => onScheduleTask(task.id, slot)}
-                  className="w-full p-3 rounded-xl border border-slate-200 hover:border-sage hover:bg-sage/5 transition-smooth text-left group"
+                  onClick={() => toggleTaskSelection(task.id)}
+                  className={`w-full p-3 rounded-xl border-2 transition-smooth text-left group ${
+                    isSelected 
+                      ? 'border-sage bg-sage/5' 
+                      : 'border-slate-200 hover:border-sage/50 hover:bg-sage/5'
+                  }`}
                 >
                   <div className="flex items-start gap-3">
-                    <CheckSquare size={16} className="mt-0.5 text-navy/30 group-hover:text-sage transition-smooth" />
+                    <div className={`mt-0.5 shrink-0 w-5 h-5 rounded border-2 transition-smooth flex items-center justify-center ${
+                      isSelected 
+                        ? 'bg-sage border-sage' 
+                        : 'border-slate-300 group-hover:border-sage'
+                    }`}>
+                      {isSelected && (
+                        <CheckSquare size={14} className="text-white" />
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-navy group-hover:text-sage transition-smooth">
+                      <p className={`text-sm font-medium transition-smooth ${
+                        isSelected ? 'text-sage' : 'text-navy group-hover:text-sage'
+                      }`}>
                         {task.text}
                       </p>
                       <span
@@ -90,6 +128,18 @@ export default function TaskSchedulePanel({ slot, todos, onScheduleTask, onClose
           </div>
         )}
       </div>
+
+      {/* Footer with Schedule button */}
+      {selectedTaskIds.length > 0 && (
+        <div className="shrink-0 px-4 py-3 border-t border-slate-100 bg-white">
+          <button
+            onClick={handleScheduleSelected}
+            className="w-full py-3 bg-sage hover:bg-sage/90 text-white rounded-xl font-semibold transition-smooth"
+          >
+            Schedule {selectedTaskIds.length} Task{selectedTaskIds.length !== 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

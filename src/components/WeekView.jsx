@@ -41,24 +41,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   const [stackManagerData, setStackManagerData] = useState(null); // { slot, tasks }
   const [showTaskScheduler, setShowTaskScheduler] = useState(false); // For adding tasks to existing stack
 
-  // Update stack manager data when todos changes
-  React.useEffect(() => {
-    if (!stackManagerData || !todos) return;
-    
-    // Reconstruct the tasks array with updated data
-    const taskIds = stackManagerData.tasks.map(t => t.id);
-    const updatedTasks = todos
-      .filter(t => taskIds.includes(t.id))
-      .sort((a, b) => (a.stackOrder || 0) - (b.stackOrder || 0));
-    
-    if (updatedTasks.length > 0) {
-      setStackManagerData({
-        slot: stackManagerData.slot,
-        tasks: updatedTasks
-      });
-    }
-  }, [todos]);
-
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
 
@@ -192,6 +174,73 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } 
         : t
     ));
+    
+    // Close the task scheduler
+    setShowTaskScheduler(false);
+    setSelectedFreeSlot(null);
+  };
+
+  const handleScheduleMultipleTasks = (taskIds, slot) => {
+    if (!todos || !onUpdateTodos || taskIds.length === 0) return;
+    
+    // Handle both Date objects and ISO strings
+    const serializedSlot = {
+      ...slot,
+      date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
+    };
+    
+    // Get the highest stackOrder for this slot
+    const tasksInSlot = todos.filter(t => {
+      if (!t.scheduledSlot) return false;
+      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
+      const slotDateStr = serializedSlot.date;
+      return tDate === slotDateStr && 
+             t.scheduledSlot.startMinutes === slot.startMinutes &&
+             t.scheduledSlot.endMinutes === slot.endMinutes;
+    });
+    const maxOrder = tasksInSlot.length > 0 
+      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
+      : -1;
+    
+    // Update all selected tasks at once
+    const taskIdSet = new Set(taskIds);
+    let currentOrder = maxOrder + 1;
+    
+    const updatedTodos = todos.map(t => {
+      if (taskIdSet.has(t.id)) {
+        const updatedTask = { ...t, scheduledSlot: serializedSlot, stackOrder: currentOrder };
+        currentOrder++;
+        return updatedTask;
+      }
+      return t;
+    });
+    
+    onUpdateTodos(updatedTodos);
+    
+    // If stack manager is open, refresh it with updated tasks
+    if (stackManagerData) {
+      const slotDateStr = serializedSlot.date;
+      const refreshedTasks = updatedTodos
+        .filter(t => {
+          if (!t.scheduledSlot) return false;
+          const tDate = typeof t.scheduledSlot.date === 'string' 
+            ? t.scheduledSlot.date 
+            : t.scheduledSlot.date.toISOString();
+          return tDate === slotDateStr && 
+                 t.scheduledSlot.startMinutes === slot.startMinutes &&
+                 t.scheduledSlot.endMinutes === slot.endMinutes;
+        })
+        .sort((a, b) => {
+          if (a.completed && !b.completed) return 1;
+          if (!a.completed && b.completed) return -1;
+          return (a.stackOrder || 0) - (b.stackOrder || 0);
+        });
+      
+      setStackManagerData({
+        slot: stackManagerData.slot,
+        tasks: refreshedTasks
+      });
+    }
     
     // Close the task scheduler
     setShowTaskScheduler(false);
@@ -434,6 +483,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           slot={selectedFreeSlot}
           todos={todos}
           onScheduleTask={handleScheduleTask}
+          onScheduleMultipleTasks={handleScheduleMultipleTasks}
           onClose={() => {
             setShowTaskScheduler(false);
             setSelectedFreeSlot(null);
@@ -444,6 +494,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           slot={selectedFreeSlot}
           todos={todos}
           onScheduleTask={handleScheduleTask}
+          onScheduleMultipleTasks={handleScheduleMultipleTasks}
           onClose={() => setSelectedFreeSlot(null)}
         />
       ) : stackManagerData ? (
