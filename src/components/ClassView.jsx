@@ -57,159 +57,139 @@ function getClassSchedule(classId, timetableData) {
       current = { ...current, endTime: lesson.endTime, period: `${current.period.split('–')[0]}–${lesson.period}` };
     } else {
       if (current) merged.push(current);
-      current = { ...lesson };
+      current = { ...lesson, dayName: dayNames[lesson.dayOfWeek] };
     }
   }
   if (current) merged.push(current);
-  return merged.map((m) => ({ ...m, dayName: dayNames[m.dayOfWeek] || '' }));
+  return merged;
 }
 
-/** Format date as "Mon 9 Feb" */
-function formatShortDate(date) {
-  return `${DAY_NAMES_SHORT[date.getDay()]} ${date.getDate()} ${MONTH_NAMES_SHORT[date.getMonth()]}`;
-}
-
-
-// --- Inline Lesson Row (for the "See All" list) ---
+// --- LessonRow Component ---
+// Each row is a future lesson that can be expanded inline to edit title, notes, links.
 
 function LessonRow({ slot, instance, accent, onUpdateInstance }) {
+  const [expanded, setExpanded] = useState(false);
   const [title, setTitle] = useState(instance.title || '');
   const [notes, setNotes] = useState(instance.notes || '');
   const [links, setLinks] = useState(instance.links || []);
   const [showAddLink, setShowAddLink] = useState(false);
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
-  const [expanded, setExpanded] = useState(false);
 
-  // Sync from parent when instance changes externally
-  React.useEffect(() => {
-    setTitle(instance.title || '');
-    setNotes(instance.notes || '');
-    setLinks(instance.links || []);
-  }, [instance]);
+  const hasData = !!(instance.title || instance.notes || instance.links?.length);
 
-  const save = (updates) => {
-    onUpdateInstance(slot.key, { ...instance, ...updates });
-  };
+  const saveTitle = () => onUpdateInstance(slot.key, { ...instance, title });
+  const saveNotes = () => onUpdateInstance(slot.key, { ...instance, notes });
 
   const addLink = () => {
     if (!newLinkUrl.trim()) return;
-    const updated = [...links, { url: newLinkUrl.trim(), label: newLinkLabel.trim() || newLinkUrl.trim() }];
+    const updated = [...links, { url: newLinkUrl, label: newLinkLabel }];
     setLinks(updated);
-    save({ links: updated });
+    onUpdateInstance(slot.key, { ...instance, links: updated });
     setNewLinkUrl('');
     setNewLinkLabel('');
     setShowAddLink(false);
   };
 
-  const removeLink = (index) => {
-    const updated = links.filter((_, i) => i !== index);
+  const removeLink = (idx) => {
+    const updated = links.filter((_, i) => i !== idx);
     setLinks(updated);
-    save({ links: updated });
+    onUpdateInstance(slot.key, { ...instance, links: updated });
   };
 
-  const hasContent = title || notes || links.length > 0;
+  const dateObj = new Date(slot.date);
+  const dayShort = DAY_NAMES_SHORT[dateObj.getDay()];
+  const monthShort = MONTH_NAMES_SHORT[dateObj.getMonth()];
 
   return (
-    <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden transition-smooth hover:border-slate-200">
-      {/* Collapsed row — always visible */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+    <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      <button
         onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-sand/30 transition-smooth text-left"
       >
-        {/* Date pill */}
-        <div className="shrink-0 w-24">
-          <p className="text-sm font-medium text-navy">{formatShortDate(slot.date)}</p>
+        <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-navy">
+              {dayShort} {dateObj.getDate()} {monthShort}
+            </span>
+            <span className="text-xs text-navy/30 font-serif tabular-nums">
+              {formatTime(slot.startTime)}–{formatTime(slot.endTime)}
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: `${accent}18`, color: accent }}>
+              P{slot.period}
+            </span>
+            {slot.room && <span className="text-xs text-navy/25 ml-auto truncate">{slot.room}</span>}
+          </div>
+          {instance.title && (
+            <p className="text-xs text-navy/50 mt-1 truncate">{instance.title}</p>
+          )}
         </div>
+        {hasData && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent }} />}
+        <ChevronDown
+          size={16}
+          className={`text-navy/20 shrink-0 transition-smooth ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
 
-        {/* Time */}
-        <span className="text-xs text-navy/40 font-serif tabular-nums shrink-0 w-24">
-          {formatTime(slot.startTime)}–{formatTime(slot.endTime)}
-        </span>
-
-        {/* Period badge */}
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
-          style={{ backgroundColor: `${accent}18`, color: accent }}>
-          P{slot.period}
-        </span>
-
-        {/* Title preview or placeholder */}
-        <span className={`flex-1 text-sm truncate ${title ? 'text-navy' : 'text-navy/20 italic'}`}>
-          {title || 'No title'}
-        </span>
-
-        {/* Indicators */}
-        {hasContent && !expanded && (
-          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent }} />
-        )}
-
-        <ChevronDown size={16}
-          className={`text-navy/20 transition-smooth shrink-0 ${expanded ? 'rotate-180' : ''}`} />
-      </div>
-
-      {/* Expanded editing area */}
       {expanded && (
         <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-50">
-          {/* Room info */}
-          {slot.room && (
-            <div className="flex items-center gap-1.5 text-xs text-navy/30">
-              <MapPin size={12} /> {slot.room}
-            </div>
-          )}
-
           {/* Title */}
           <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Lesson Title
+            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-navy/30 mb-1.5">
+              <BookOpen size={11} /> Lesson Title
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => save({ title })}
+              onBlur={saveTitle}
               placeholder="e.g. Forces & Newton's Laws"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-navy text-sm
-                         placeholder:text-navy/20 focus:outline-none focus:border-sage
-                         focus:ring-2 focus:ring-sage/20 transition-smooth"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-navy
+                         placeholder:text-navy/20 focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20"
             />
           </div>
 
           {/* Notes */}
           <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Notes
+            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-navy/30 mb-1.5">
+              <StickyNote size={11} /> Notes
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => save({ notes })}
-              rows={2}
-              placeholder="What to cover…"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-navy text-sm
-                         leading-relaxed placeholder:text-navy/20 resize-none
-                         focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20 transition-smooth"
+              onBlur={saveNotes}
+              rows={3}
+              placeholder="Add notes about this lesson…"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-navy leading-relaxed
+                         placeholder:text-navy/20 focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20 resize-none"
             />
           </div>
 
           {/* Links */}
           <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Links &amp; Resources
+            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-navy/30 mb-1.5">
+              <Link2 size={11} /> Resources
             </label>
             {links.length > 0 && (
               <div className="space-y-1.5 mb-2">
-                {links.map((link, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-sand/50 rounded-lg px-2.5 py-1.5 group">
-                    <Link2 size={12} className="text-navy/25 shrink-0" />
-                    <a href={link.url} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-sage hover:underline truncate flex-1">
-                      {link.label || link.url}
+                {links.map((link, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-sand/40 rounded-lg px-2.5 py-1.5">
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center gap-1.5 text-xs text-navy hover:text-sage transition-smooth truncate"
+                    >
+                      <ExternalLink size={11} className="shrink-0" />
+                      <span className="truncate">{link.label || link.url}</span>
                     </a>
-                    <ExternalLink size={10} className="text-navy/15 shrink-0" />
-                    <button onClick={() => removeLink(i)}
-                      className="p-0.5 rounded text-navy/10 hover:text-terracotta
-                                 opacity-0 group-hover:opacity-100 transition-smooth shrink-0">
-                      <Trash2 size={12} />
+                    <button
+                      onClick={() => removeLink(idx)}
+                      className="p-1 rounded hover:bg-white hover:text-terracotta transition-smooth shrink-0"
+                    >
+                      <Trash2 size={11} />
                     </button>
                   </div>
                 ))}
@@ -253,7 +233,7 @@ function LessonRow({ slot, instance, accent, onUpdateInstance }) {
 
 // --- Main Component ---
 
-export default function ClassView({ timetableData, lessonInstances, onUpdateClass, onUpdateInstance }) {
+export default function ClassView({ timetableData, lessonInstances, onUpdateClass, onUpdateInstance, settings }) {
   const [selectedClassId, setSelectedClassId] = useState(null);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
@@ -264,9 +244,13 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
 
   // Generate future lessons for the selected class
   const futureLessons = useMemo(() => {
+    console.log('🔍 ClassView generating lessons');
+    console.log('  Settings:', settings);
+    console.log('  Holiday weeks:', settings?.holidayWeeks);
+    
     if (!selectedClass) return [];
-    return generateFutureLessons(selectedClass.id, timetableData, 26);
-  }, [selectedClass, timetableData]);
+    return generateFutureLessons(selectedClass.id, timetableData, 26, settings);
+  }, [selectedClass, timetableData, settings]);
 
   const startEdit = (field, currentValue) => {
     setEditingField(field);
@@ -376,72 +360,90 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
             {/* Class header */}
             <div className="flex items-center gap-4 mb-8">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: `${getClassColor(selectedClass.id, classes)}20` }}>
-                <BookOpen size={22} style={{ color: getClassColor(selectedClass.id, classes) }} />
+                style={{ backgroundColor: `${getClassColor(selectedClass.id, classes)}18` }}>
+                <span className="font-serif font-bold text-lg" style={{ color: getClassColor(selectedClass.id, classes) }}>
+                  {selectedClass.name.charAt(0)}
+                </span>
               </div>
               <div>
                 <h2 className="font-serif text-2xl font-bold text-navy">{selectedClass.name}</h2>
-                <p className="text-sm text-navy/40">
-                  {selectedClass.subject}
-                  {selectedClass.timetableCode && ` · ${selectedClass.timetableCode}`}
+                <p className="text-sm text-navy/50 font-medium">{selectedClass.subject}</p>
+              </div>
+            </div>
+
+            {/* Class info cards */}
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              {/* Class Size */}
+              <div className="bg-white rounded-2xl border border-slate-100 p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Users size={16} className="text-navy/30" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-navy/30">Class Size</h3>
+                  </div>
+                  {editingField !== 'classSize' && (
+                    <button onClick={() => startEdit('classSize', selectedClass.classSize)}
+                      className="p-1.5 rounded-lg text-navy/20 hover:text-navy/50 hover:bg-sand transition-smooth">
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                </div>
+                {editingField === 'classSize' ? (
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveEdit(selectedClass.id, 'classSize');
+                        if (e.key === 'Escape') cancelEdit();
+                      }}
+                      autoFocus
+                      min="1"
+                      placeholder="e.g. 24"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-navy
+                                 focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => saveEdit(selectedClass.id, 'classSize')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   bg-[#E07A5F] text-white shadow-sm shadow-[#E07A5F]/20">
+                        <Save size={11} /> Save
+                      </button>
+                      <button onClick={cancelEdit}
+                        className="px-3 py-1.5 rounded-full text-xs font-medium text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-serif font-bold text-navy">
+                    {selectedClass.classSize || <span className="text-navy/20 text-lg">—</span>}
+                  </p>
+                )}
+              </div>
+
+              {/* Timetable Code */}
+              <div className="bg-white rounded-2xl border border-slate-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <BookOpen size={16} className="text-navy/30" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-navy/30">Timetable Code</h3>
+                </div>
+                <p className="text-lg font-medium text-navy font-mono">
+                  {selectedClass.timetableCode || <span className="text-navy/20">—</span>}
                 </p>
               </div>
             </div>
 
-            {/* Editable fields */}
-            <div className="space-y-4 mb-10">
-              {/* Class Size */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Users size={18} className="text-navy/30" />
-                    <div>
-                      <p className="text-xs font-semibold text-navy/40 uppercase tracking-wider">Class Size</p>
-                      {editingField === 'classSize' ? (
-                        <div className="flex items-center gap-2 mt-1">
-                          <input type="number" min="0" max="99" value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveEdit(selectedClass.id, 'classSize');
-                              if (e.key === 'Escape') cancelEdit();
-                            }}
-                            autoFocus
-                            className="w-20 px-3 py-1.5 rounded-xl border border-slate-200 text-navy font-serif font-bold text-lg
-                                       focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20" />
-                          <button onClick={() => saveEdit(selectedClass.id, 'classSize')}
-                            className="p-1.5 rounded-full bg-sage/10 text-sage hover:bg-sage/20 transition-smooth">
-                            <Save size={14} />
-                          </button>
-                          <button onClick={cancelEdit}
-                            className="p-1.5 rounded-full bg-slate-100 text-navy/30 hover:bg-slate-200 transition-smooth">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="font-serif font-bold text-navy text-lg mt-0.5">
-                          {selectedClass.classSize ?? <span className="text-navy/20 text-sm font-sans font-normal italic">Not set</span>}
-                          {selectedClass.classSize && <span className="text-navy/30 text-sm font-sans font-normal ml-1">students</span>}
-                        </p>
-                      )}
-                    </div>
+            {/* Class Notes */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-8">
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-3">
+                    <StickyNote size={16} className="text-navy/30" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-navy/30">Class Notes</h3>
+                    <span className="text-[10px] text-navy/20 italic">(shown on every lesson)</span>
                   </div>
-                  {editingField !== 'classSize' && (
-                    <button onClick={() => startEdit('classSize', selectedClass.classSize)}
-                      className="p-2 rounded-xl text-navy/20 hover:text-navy/50 hover:bg-sand transition-smooth">
-                      <Pencil size={15} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Class Notes */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <StickyNote size={15} className="text-navy/30" />
-                      <p className="text-xs font-semibold text-navy/40 uppercase tracking-wider">Class Notes</p>
-                    </div>
+                  <div>
                     {editingField === 'notes' ? (
                       <div>
                         <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)}

@@ -265,11 +265,19 @@ export function lessonInstanceKey(classId, date) {
  * @returns {Array} sorted array of { date, dayName, startTime, endTime, period, room, key }
  */
 export function generateFutureLessons(classId, timetableData, weeksAhead = 20, settings = null) {
+  console.log('🎯 generateFutureLessons called for class:', classId);
+  console.log('  Settings received:', settings);
+  console.log('  Holiday weeks from settings:', settings?.holidayWeeks);
+  
   if (!timetableData?.recurringLessons) return [];
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
   const holidayWeeks = settings?.holidayWeeks || [];
+  
+  console.log('  Holiday weeks array:', holidayWeeks);
+  console.log('  Array length:', holidayWeeks.length);
+  
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const classLessons = timetableData.recurringLessons.filter(
@@ -286,6 +294,20 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20, s
   for (let w = 0; w < weeksAhead; w++) {
     const weekStart = new Date(startMonday);
     weekStart.setDate(startMonday.getDate() + w * 7);
+    
+    // Check if this week is a holiday week
+    const weekStartISO = formatDateISO(weekStart);
+    const isHolidayWeek = holidayWeeks.includes(weekStartISO);
+    
+    if (w < 5) {  // Only log first 5 weeks to avoid spam
+      console.log(`  Week ${w}: ${weekStartISO} - Is holiday? ${isHolidayWeek}`);
+    }
+    
+    // Skip holiday weeks entirely
+    if (isHolidayWeek) {
+      console.log(`    ⏭️  SKIPPING week ${weekStartISO}`);
+      continue;
+    }
 
     const weekNum = isTwoWeek && anchorDate
       ? getWeekNumberWithHolidays(weekStart, anchorDate, holidayWeeks)

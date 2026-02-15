@@ -16,6 +16,7 @@ import {
   getSettings,
   setSettings,
 } from './utils/storage';
+import { remapLessonInstances } from './utils/lessonInstanceRemapping';
 
 // ===== App =====
 // Root component. Manages:
@@ -99,6 +100,20 @@ export default function App() {
 
   // Update settings
   const handleUpdateSettings = (newSettings) => {
+    // Remap lesson instances if holiday weeks changed
+    if (timetable) {
+      const remappedInstances = remapLessonInstances(
+        lessonInstances,
+        timetable,
+        settings,
+        newSettings
+      );
+      
+      // Update both settings and remapped lesson instances
+      setLessonInstancesState(remappedInstances);
+      setLessonInstances(remappedInstances);
+    }
+    
     setSettingsState(newSettings);
     setSettings(newSettings);
   };
