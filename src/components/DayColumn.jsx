@@ -1,13 +1,10 @@
 import React from 'react';
-import { isToday, timeToMinutes } from '../utils/dateHelpers';
+import { isToday, timeToMinutes, formatDateISO } from '../utils/dateHelpers';
 import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
 import FreePeriodSlot from './FreePeriodSlot';
 import TaskStack from './TaskStack';
-import { getClassColor, lessonInstanceKey } from '../utils/timetable';
-import { formatDateISO } from '../utils/dateHelpers';
-
-const PX_PER_MINUTE = 1.8;
+import { getClassColor } from '../utils/timetable';
 
 export default function DayColumn({
   day,
@@ -17,7 +14,6 @@ export default function DayColumn({
   freePeriods,
   scheduledTasks,
   timetableData,
-  lessonInstances,
   todos,
   gridStartMin,
   gridHeight,
@@ -27,18 +23,17 @@ export default function DayColumn({
   onToggleTaskComplete,
   onOpenStackManager,
   hasInstanceData,
-  getLessonInstanceData,
+  PX_PER_MINUTE,
 }) {
   const today = isToday(day);
 
   const timeToTop = (timeStr) => (timeToMinutes(timeStr) - gridStartMin) * PX_PER_MINUTE;
   const durationToHeight = (s, e) => (timeToMinutes(e) - timeToMinutes(s)) * PX_PER_MINUTE;
 
-  // Group scheduled tasks by their time slot
   const taskStacks = {};
   scheduledTasks.forEach(task => {
     const slot = task.scheduledSlot;
-    const slotKey = `${formatDateISO(typeof slot.date === 'string' ? new Date(slot.date) : slot.date)}-${slot.startMinutes}-${slot.endMinutes}`;
+    const slotKey = `${formatDateISO(typeof slot.date === 'string' ? new Date(slot.date) : slot.date)}-${slot.start}-${slot.end}`;
     if (!taskStacks[slotKey]) {
       taskStacks[slotKey] = [];
     }
@@ -47,7 +42,6 @@ export default function DayColumn({
 
   return (
     <div className={`relative ${today ? 'bg-[#81B29A]/[0.03] rounded-2xl' : ''}`} style={{ height: gridHeight }}>
-      {/* Free periods */}
       {freePeriods.map((period, pi) => (
         <FreePeriodSlot
           key={`free-${pi}`}
@@ -58,20 +52,22 @@ export default function DayColumn({
         />
       ))}
 
-      {/* Task stacks */}
-      {Object.entries(taskStacks).map(([slotKey, tasks]) => (
-        <TaskStack
-          key={slotKey}
-          tasks={tasks}
-          gridStartMin={gridStartMin}
-          pxPerMinute={PX_PER_MINUTE}
-          onToggleComplete={onToggleTaskComplete}
-          onOpenManager={onOpenStackManager}
-          slotKey={slotKey}
-        />
-      ))}
+      {Object.entries(taskStacks).map(([slotKey, tasks]) => {
+        const firstTask = tasks[0];
+        const slot = firstTask.scheduledSlot;
+        return (
+          <TaskStack
+            key={slotKey}
+            tasks={tasks}
+            slot={slot}
+            gridStartMin={gridStartMin}
+            pxPerMinute={PX_PER_MINUTE}
+            onToggleComplete={onToggleTaskComplete}
+            onOpenManager={() => onOpenStackManager(slot, tasks)}
+          />
+        );
+      })}
 
-      {/* Duties */}
       {duties.map((duty, di) => {
         const top = timeToTop(duty.startTime);
         const height = durationToHeight(duty.startTime, duty.endTime);
@@ -82,13 +78,11 @@ export default function DayColumn({
         );
       })}
 
-      {/* Lessons */}
       {lessons.map((lesson) => {
         const top = timeToTop(lesson.startTime);
         const height = durationToHeight(lesson.startTime, lesson.endTime);
         const accent = getClassColor(lesson.classId, timetableData.classes);
         const hasData = hasInstanceData(lesson);
-        const instanceData = getLessonInstanceData(lesson);
 
         return (
           <div
@@ -103,7 +97,7 @@ export default function DayColumn({
               hasData={hasData}
               onClick={onLessonClick}
               showTitle={viewMode === 'day'}
-              instanceData={instanceData}
+              lessonContent={lesson.lessonContent}
             />
           </div>
         );

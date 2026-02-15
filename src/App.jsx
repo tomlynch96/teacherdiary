@@ -9,26 +9,25 @@ import {
   getTimetableData,
   setTimetableData,
   clearTimetableData,
-  getLessonInstances,
-  setLessonInstances,
+  getLessonSequence,
+  updateLessonInSequence,
   getTodos,
   setTodos,
   getSettings,
   setSettings,
 } from './utils/storage';
-import { remapLessonInstances } from './utils/lessonInstanceRemapping';
 
 // ===== App =====
 // Root component. Manages:
 // - Timetable data (imported JSON + class edits)
-// - Lesson instances (per-lesson titles, notes, links keyed by "classId::date")
+// - Lesson sequence (ordered list of lesson content per class)
 // - To-do list (tasks with scheduling)
 // - Settings (workday hours, holiday weeks)
 // - Current navigation view
 
 export default function App() {
   const [timetable, setTimetable] = useState(null);
-  const [lessonInstances, setLessonInstancesState] = useState({});
+  const [lessonSequence, setLessonSequenceState] = useState({});
   const [todos, setTodosState] = useState([]);
   const [settings, setSettingsState] = useState({
     workdayStart: '09:00',
@@ -43,8 +42,8 @@ export default function App() {
     const savedTimetable = getTimetableData();
     if (savedTimetable) setTimetable(savedTimetable);
     
-    const savedInstances = getLessonInstances();
-    if (savedInstances) setLessonInstancesState(savedInstances);
+    const savedSequence = getLessonSequence();
+    if (savedSequence) setLessonSequenceState(savedSequence);
     
     const savedTodos = getTodos();
     if (savedTodos) setTodosState(savedTodos);
@@ -64,7 +63,7 @@ export default function App() {
     if (window.confirm('Clear your timetable data? You can re-import it anytime.')) {
       clearTimetableData();
       setTimetable(null);
-      setLessonInstancesState({});
+      setLessonSequenceState({});
       setCurrentView('week');
     }
   };
@@ -83,13 +82,11 @@ export default function App() {
     });
   };
 
-  // Update a lesson instance (title, notes, links for a specific class+date)
-  const handleUpdateInstance = (key, data) => {
-    setLessonInstancesState((prev) => {
-      const updated = { ...prev, [key]: data };
-      setLessonInstances(updated);
-      return updated;
-    });
+  // Update a lesson in the sequence
+  const handleUpdateLesson = (classId, lessonId, updates) => {
+    updateLessonInSequence(classId, lessonId, updates);
+    const updated = getLessonSequence();
+    setLessonSequenceState(updated);
   };
 
   // Update todos
@@ -100,20 +97,6 @@ export default function App() {
 
   // Update settings
   const handleUpdateSettings = (newSettings) => {
-    // Remap lesson instances if holiday weeks changed
-    if (timetable) {
-      const remappedInstances = remapLessonInstances(
-        lessonInstances,
-        timetable,
-        settings,
-        newSettings
-      );
-      
-      // Update both settings and remapped lesson instances
-      setLessonInstancesState(remappedInstances);
-      setLessonInstances(remappedInstances);
-    }
-    
     setSettingsState(newSettings);
     setSettings(newSettings);
   };
@@ -140,8 +123,8 @@ export default function App() {
         ) : currentView === 'week' ? (
           <WeekView
             timetableData={timetable}
-            lessonInstances={lessonInstances}
-            onUpdateInstance={handleUpdateInstance}
+            lessonSequence={lessonSequence}
+            onUpdateLesson={handleUpdateLesson}
             onClearData={handleClearData}
             todos={todos}
             onUpdateTodos={handleUpdateTodos}
@@ -150,9 +133,9 @@ export default function App() {
         ) : currentView === 'class' ? (
           <ClassView
             timetableData={timetable}
-            lessonInstances={lessonInstances}
+            lessonSequence={lessonSequence}
             onUpdateClass={handleUpdateClass}
-            onUpdateInstance={handleUpdateInstance}
+            onUpdateLesson={handleUpdateLesson}
             settings={settings}
           />
         ) : currentView === 'todos' ? (

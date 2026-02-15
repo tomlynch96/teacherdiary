@@ -1,109 +1,203 @@
-// ===== localStorage Abstraction Layer =====
-// All storage reads/writes go through here.
-// When you move to a backend, only this file needs to change.
+// ===== LocalStorage Abstraction Layer =====
+// All localStorage reads/writes go through these helpers.
+// When migrating to a backend, only this file needs to change.
 
 const KEYS = {
   TIMETABLE: 'timetableData',
-  LESSONS: 'lessons',
-  LESSON_INSTANCES: 'lessonInstances',
+  LESSON_SEQUENCE: 'lessonSequence',
+  LESSON_SCHEDULE: 'lessonSchedule',
   TODOS: 'todos',
   SETTINGS: 'settings',
 };
 
-// ---- Generic helpers ----
-
-function getItem(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch (err) {
-    console.error(`Error reading ${key} from localStorage:`, err);
-    return null;
-  }
-}
-
-function setItem(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (err) {
-    console.error(`Error writing ${key} to localStorage:`, err);
-    return false;
-  }
-}
-
-function removeItem(key) {
-  localStorage.removeItem(key);
-}
-
-// ---- Timetable data ----
+// ===== Timetable Data =====
 
 export function getTimetableData() {
-  return getItem(KEYS.TIMETABLE);
+  const raw = localStorage.getItem(KEYS.TIMETABLE);
+  return raw ? JSON.parse(raw) : null;
 }
 
 export function setTimetableData(data) {
-  return setItem(KEYS.TIMETABLE, data);
+  localStorage.setItem(KEYS.TIMETABLE, JSON.stringify(data));
 }
 
 export function clearTimetableData() {
-  removeItem(KEYS.TIMETABLE);
-  removeItem(KEYS.LESSONS);
-  removeItem(KEYS.LESSON_INSTANCES);
+  localStorage.removeItem(KEYS.TIMETABLE);
+  localStorage.removeItem(KEYS.LESSON_SEQUENCE);
+  localStorage.removeItem(KEYS.LESSON_SCHEDULE);
 }
 
-// ---- Lesson Instances ----
-// Keyed by "classId::YYYY-MM-DD" e.g. "12G2::2026-02-09"
-// Each value: { title, notes, links: [{url, label}] }
+// ===== Lesson Sequence (Content) =====
+// Structure: { classId: [{ id, title, notes, links, order }, ...] }
 
-export function getLessonInstances() {
-  return getItem(KEYS.LESSON_INSTANCES) || {};
+export function getLessonSequence() {
+  const raw = localStorage.getItem(KEYS.LESSON_SEQUENCE);
+  return raw ? JSON.parse(raw) : {};
 }
 
-export function setLessonInstances(instances) {
-  return setItem(KEYS.LESSON_INSTANCES, instances);
+export function setLessonSequence(sequence) {
+  localStorage.setItem(KEYS.LESSON_SEQUENCE, JSON.stringify(sequence));
 }
 
-export function updateLessonInstance(key, updates) {
-  const all = getLessonInstances();
-  const existing = all[key] || { title: '', notes: '', links: [] };
-  all[key] = { ...existing, ...updates };
-  setLessonInstances(all);
-  return all;
+export function getClassLessonSequence(classId) {
+  const allSequences = getLessonSequence();
+  return allSequences[classId] || [];
 }
 
-// ---- To-Do List ----
-// Array of tasks: [{ id, text, priority, completed, createdAt, scheduledSlot, stackOrder }]
+export function setClassLessonSequence(classId, lessons) {
+  const allSequences = getLessonSequence();
+  allSequences[classId] = lessons;
+  setLessonSequence(allSequences);
+}
+
+export function updateLessonInSequence(classId, lessonId, updates) {
+  const lessons = getClassLessonSequence(classId);
+  const index = lessons.findIndex(l => l.id === lessonId);
+  
+  if (index !== -1) {
+    lessons[index] = { ...lessons[index], ...updates };
+    setClassLessonSequence(classId, lessons);
+  }
+}
+
+export function addLessonToSequence(classId, lesson) {
+  const lessons = getClassLessonSequence(classId);
+  const maxOrder = lessons.length > 0 ? Math.max(...lessons.map(l => l.order)) : -1;
+  
+  const newLesson = {
+    id: `${classId}-lesson-${Date.now()}`,
+    title: lesson.title || '',
+    notes: lesson.notes || '',
+    links: lesson.links || [],
+    order: maxOrder + 1,
+  };
+  
+  lessons.push(newLesson);
+  setClassLessonSequence(classId, lessons);
+  return newLesson;
+}
+
+export function deleteLessonFromSequence(classId, lessonId) {
+  const lessons = getClassLessonSequence(classId);
+  const filtered = lessons.filter(l => l.id !== lessonId);
+  
+  // Reorder remaining lessons
+  filtered.forEach((lesson, index) => {
+    lesson.order = index;
+  });
+  
+  setClassLessonSequence(classId, filtered);
+}
+
+export function reorderLessonSequence(classId, lessonId, newOrder) {
+  const lessons = getClassLessonSequence(classId);
+  const lesson = lessons.find(l => l.id === lessonId);
+  
+  if (!lesson) return;
+  
+  const oldOrder = lesson.order;
+  
+  // Adjust orders of affected lessons
+  lessons.forEach(l => {
+    if (l.id === lessonId) {
+      l.order = newOrder;
+    } else if (oldOrder < newOrder && l.order > oldOrder && l.order <= newOrder) {
+      l.order--;
+    } else if (oldOrder > newOrder && l.order >= newOrder && l.order < oldOrder) {
+      l.order++;
+    }
+  });
+  
+  // Sort by order
+  lessons.sort((a, b) => a.order - b.order);
+  
+  setClassLessonSequence(classId, lessons);
+}
+
+// ===== Lesson Schedule (Mapping) =====
+// Structure: { classId: { currentIndex: 0, schedule: { occurrenceNum: sequenceIndex } } }
+
+export function getLessonSchedule() {
+  const raw = localStorage.getItem(KEYS.LESSON_SCHEDULE);
+  return raw ? JSON.parse(raw) : {};
+}
+
+export function setLessonSchedule(schedule) {
+  localStorage.setItem(KEYS.LESSON_SCHEDULE, JSON.stringify(schedule));
+}
+
+export function getClassSchedule(classId) {
+  const allSchedules = getLessonSchedule();
+  return allSchedules[classId] || { currentIndex: 0, schedule: {} };
+}
+
+export function setClassSchedule(classId, scheduleData) {
+  const allSchedules = getLessonSchedule();
+  allSchedules[classId] = scheduleData;
+  setLessonSchedule(allSchedules);
+}
+
+export function getLessonForOccurrence(classId, occurrenceNum) {
+  const schedule = getClassSchedule(classId);
+  const sequenceIndex = schedule.schedule[occurrenceNum];
+  
+  if (sequenceIndex === undefined) {
+    // Auto-assign: map occurrence to sequence index
+    const newSequenceIndex = schedule.currentIndex;
+    schedule.schedule[occurrenceNum] = newSequenceIndex;
+    schedule.currentIndex = newSequenceIndex + 1;
+    setClassSchedule(classId, schedule);
+    return newSequenceIndex;
+  }
+  
+  return sequenceIndex;
+}
+
+export function pushBackAllLessons(classId, fromOccurrence) {
+  const schedule = getClassSchedule(classId);
+  const newSchedule = {};
+  
+  // Shift all mappings from fromOccurrence onwards
+  Object.keys(schedule.schedule).forEach(occNum => {
+    const num = parseInt(occNum);
+    if (num >= fromOccurrence) {
+      newSchedule[num + 1] = schedule.schedule[occNum];
+    } else {
+      newSchedule[num] = schedule.schedule[occNum];
+    }
+  });
+  
+  schedule.schedule = newSchedule;
+  setClassSchedule(classId, schedule);
+}
+
+// ===== To-Do List =====
 
 export function getTodos() {
-  return getItem(KEYS.TODOS) || [];
+  const raw = localStorage.getItem(KEYS.TODOS);
+  return raw ? JSON.parse(raw) : [];
 }
 
 export function setTodos(todos) {
-  return setItem(KEYS.TODOS, todos);
+  localStorage.setItem(KEYS.TODOS, JSON.stringify(todos));
 }
 
-export function clearTodos() {
-  removeItem(KEYS.TODOS);
-}
-
-// ---- Settings ----
-// Settings object: { workdayStart, workdayEnd, holidayWeeks: [] }
+// ===== Settings =====
 
 export function getSettings() {
-  return getItem(KEYS.SETTINGS) || {
+  const raw = localStorage.getItem(KEYS.SETTINGS);
+  if (raw) {
+    return JSON.parse(raw);
+  }
+  
+  // Default settings
+  return {
     workdayStart: '09:00',
     workdayEnd: '16:00',
-    holidayWeeks: []
+    holidayWeeks: [],
   };
 }
 
 export function setSettings(settings) {
-  return setItem(KEYS.SETTINGS, settings);
-}
-
-// ---- Check if data is loaded ----
-
-export function hasData() {
-  return !!getItem(KEYS.TIMETABLE);
+  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
 }
