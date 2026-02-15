@@ -73,7 +73,7 @@ export function updateLessonInstance(key, updates) {
 }
 
 // ---- To-Do List ----
-// Array of tasks: [{ id, text, priority, completed, createdAt, scheduledSlot }]
+// Array of tasks: [{ id, text, priority, completed, createdAt, scheduledSlot, stackOrder }]
 
 export function getTodos() {
   return getItem(KEYS.TODOS) || [];
@@ -88,9 +88,14 @@ export function clearTodos() {
 }
 
 // ---- Settings ----
+// Settings object: { workdayStart, workdayEnd, holidayWeeks: [] }
 
 export function getSettings() {
-  return getItem(KEYS.SETTINGS) || { theme: 'light' };
+  return getItem(KEYS.SETTINGS) || {
+    workdayStart: '09:00',
+    workdayEnd: '16:00',
+    holidayWeeks: []
+  };
 }
 
 export function setSettings(settings) {

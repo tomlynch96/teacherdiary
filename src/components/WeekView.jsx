@@ -17,10 +17,11 @@ import {
   shiftWeek,
   formatWeekRange,
   isToday,
-  getWeekNumber,
+  getWeekNumberWithHolidays,
   timeToMinutes,
   formatDateISO,
   DAY_NAMES_SHORT,
+  parseTime,
 } from '../utils/dateHelpers';
 import {
   getLessonsForWeek,
@@ -32,14 +33,22 @@ import {
 
 const PX_PER_MINUTE = 1.8;
 
-export default function WeekView({ timetableData, lessonInstances, onUpdateInstance, onClearData, todos, onUpdateTodos }) {
+export default function WeekView({ 
+  timetableData, 
+  lessonInstances, 
+  onUpdateInstance, 
+  onClearData, 
+  todos, 
+  onUpdateTodos,
+  settings
+}) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [viewMode, setViewMode] = useState('week');
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
   const [selectedFreeSlot, setSelectedFreeSlot] = useState(null);
-  const [stackManagerData, setStackManagerData] = useState(null); // { slot, tasks }
-  const [showTaskScheduler, setShowTaskScheduler] = useState(false); // For adding tasks to existing stack
+  const [stackManagerData, setStackManagerData] = useState(null);
+  const [showTaskScheduler, setShowTaskScheduler] = useState(false);
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
@@ -47,12 +56,12 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
   const weekNum = isTwoWeek && anchorDate
-    ? getWeekNumber(currentDate, anchorDate)
+    ? getWeekNumberWithHolidays(currentDate, anchorDate, settings?.holidayWeeks || [])
     : null;
 
   const rawLessonsByDay = useMemo(
-    () => getLessonsForWeek(timetableData, weekDays),
-    [timetableData, weekDays]
+    () => getLessonsForWeek(timetableData, weekDays, settings),
+    [timetableData, weekDays, settings]
   );
 
   const lessonsByDay = useMemo(() => {
@@ -64,14 +73,24 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   }, [rawLessonsByDay]);
 
   const dutiesByDay = useMemo(
-    () => getDutiesForWeek(timetableData, weekDays),
-    [timetableData, weekDays]
+    () => getDutiesForWeek(timetableData, weekDays, settings),
+    [timetableData, weekDays, settings]
   );
 
-  const { startHour, endHour } = useMemo(
-    () => getTimeRange(timetableData),
-    [timetableData]
-  );
+  // Use settings for workday hours if available, otherwise calculate from timetable
+  const { startHour, endHour } = useMemo(() => {
+    if (settings?.workdayStart && settings?.workdayEnd) {
+      const start = parseTime(settings.workdayStart);
+      const end = parseTime(settings.workdayEnd);
+      return {
+        startHour: start.hours,
+        endHour: end.hours
+      };
+    }
+    
+    // Fallback to calculating from timetable data
+    return getTimeRange(timetableData);
+  }, [timetableData, settings]);
 
   const gridStartMin = startHour * 60;
   const gridTotalMin = (endHour * 60) - gridStartMin;
@@ -93,203 +112,184 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     ? (lessonsByDay[selectedDay.getDay() === 0 ? 7 : selectedDay.getDay()] || []).length
     : Object.values(lessonsByDay).reduce((sum, l) => sum + l.length, 0);
 
-  // Detect free periods
   const freePeriodsWithTasks = useMemo(() => {
-    const periods = {};
+    const result = {};
     
-    Object.keys(lessonsByDay).forEach(dayNum => {
+    if (!todos) return result;
+
+    weekDays.forEach((day, idx) => {
+      const dayNum = day.getDay() === 0 ? 7 : day.getDay();
       const lessons = lessonsByDay[dayNum] || [];
       const duties = dutiesByDay[dayNum] || [];
-      const dayIndex = parseInt(dayNum) - 1;
-      if (dayIndex < 0 || dayIndex >= weekDays.length) return;
       
-      const date = weekDays[dayIndex];
-      const occupied = [
-        ...lessons.map(l => ({ start: timeToMinutes(l.startTime), end: timeToMinutes(l.endTime) })),
-        ...duties.map(d => ({ start: timeToMinutes(d.startTime), end: timeToMinutes(d.endTime) }))
-      ].sort((a, b) => a.start - b.start);
-
-      let currentTime = startHour * 60;
-      const dayPeriods = [];
-
-      occupied.forEach(slot => {
-        if (currentTime < slot.start && (slot.start - currentTime) >= 30) {
-          dayPeriods.push({
-            date,
-            startMinutes: currentTime,
-            endMinutes: slot.start,
-            duration: slot.start - currentTime,
+      const slots = [];
+      lessons.forEach(lesson => {
+        slots.push({
+          type: 'lesson',
+          start: timeToMinutes(lesson.startTime),
+          end: timeToMinutes(lesson.endTime)
+        });
+      });
+      
+      duties.forEach(duty => {
+        slots.push({
+          type: 'duty',
+          start: timeToMinutes(duty.startTime),
+          end: timeToMinutes(duty.endTime)
+        });
+      });
+      
+      slots.sort((a, b) => a.start - b.start);
+      
+      const freePeriods = [];
+      const dayStart = startHour * 60;
+      const dayEnd = endHour * 60;
+      
+      if (slots.length === 0) {
+        freePeriods.push({
+          date: day,
+          startMinutes: dayStart,
+          endMinutes: dayEnd,
+          duration: dayEnd - dayStart
+        });
+      } else {
+        if (slots[0].start > dayStart && (slots[0].start - dayStart) >= 30) {
+          freePeriods.push({
+            date: day,
+            startMinutes: dayStart,
+            endMinutes: slots[0].start,
+            duration: slots[0].start - dayStart
           });
         }
-        currentTime = Math.max(currentTime, slot.end);
-      });
-
-      if (currentTime < endHour * 60 && ((endHour * 60) - currentTime) >= 30) {
-        dayPeriods.push({
-          date,
-          startMinutes: currentTime,
-          endMinutes: endHour * 60,
-          duration: (endHour * 60) - currentTime,
-        });
+        
+        for (let i = 0; i < slots.length - 1; i++) {
+          const gap = slots[i + 1].start - slots[i].end;
+          if (gap >= 30) {
+            freePeriods.push({
+              date: day,
+              startMinutes: slots[i].end,
+              endMinutes: slots[i + 1].start,
+              duration: gap
+            });
+          }
+        }
+        
+        const lastEnd = slots[slots.length - 1].end;
+        if (dayEnd > lastEnd && (dayEnd - lastEnd) >= 30) {
+          freePeriods.push({
+            date: day,
+            startMinutes: lastEnd,
+            endMinutes: dayEnd,
+            duration: dayEnd - lastEnd
+          });
+        }
       }
-
-      periods[dayNum] = dayPeriods;
+      
+      result[dayNum] = freePeriods.map(period => {
+        const tasksInPeriod = todos.filter(t => {
+          if (!t.scheduledSlot) return false;
+          const slotDate = typeof t.scheduledSlot.date === 'string' 
+            ? t.scheduledSlot.date 
+            : t.scheduledSlot.date.toISOString();
+          const periodDate = formatDateISO(period.date);
+          return slotDate.startsWith(periodDate) && 
+                 t.scheduledSlot.startMinutes === period.startMinutes;
+        }).sort((a, b) => (a.stackOrder || 0) - (b.stackOrder || 0));
+        
+        return {
+          ...period,
+          tasks: tasksInPeriod
+        };
+      });
     });
-
-    return periods;
-  }, [lessonsByDay, dutiesByDay, weekDays, startHour, endHour]);
+    
+    return result;
+  }, [weekDays, lessonsByDay, dutiesByDay, todos, startHour, endHour]);
 
   const goToPrevWeek = () => setCurrentDate((d) => shiftWeek(d, -1));
   const goToNextWeek = () => setCurrentDate((d) => shiftWeek(d, 1));
   const goToToday = () => setCurrentDate(new Date());
 
-  const handleLessonClick = (lesson) => setSelectedLesson(lesson);
   const handleDayClick = (dayIndex) => {
-    setSelectedDayIndex(dayIndex);
-    setViewMode('day');
+    if (viewMode === 'day') {
+      setSelectedDayIndex(dayIndex);
+    }
   };
 
-  const handleScheduleTask = (taskId, slot) => {
-    if (!todos || !onUpdateTodos) return;
-    // Handle both Date objects and ISO strings
-    const serializedSlot = {
-      ...slot,
-      date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
-    };
-    // Get the highest stackOrder for this slot
-    const tasksInSlot = todos.filter(t => {
-      if (!t.scheduledSlot) return false;
-      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
-      const slotDateStr = serializedSlot.date;
-      return tDate === slotDateStr && 
-             t.scheduledSlot.startMinutes === slot.startMinutes &&
-             t.scheduledSlot.endMinutes === slot.endMinutes;
-    });
-    const maxOrder = tasksInSlot.length > 0 
-      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
-      : -1;
-    
-    onUpdateTodos(todos.map(t => 
-      t.id === taskId 
-        ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } 
-        : t
-    ));
-    
-    // Close the task scheduler
-    setShowTaskScheduler(false);
+  const handleLessonClick = (lesson) => {
+    setSelectedLesson(lesson);
     setSelectedFreeSlot(null);
+    setStackManagerData(null);
   };
 
-  const handleScheduleMultipleTasks = (taskIds, slot) => {
-    if (!todos || !onUpdateTodos || taskIds.length === 0) return;
+  const handleScheduleTask = (taskIds, slot) => {
+    if (!todos || !onUpdateTodos) return;
     
-    // Handle both Date objects and ISO strings
     const serializedSlot = {
-      ...slot,
-      date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
+      date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString(),
+      startMinutes: slot.startMinutes,
+      endMinutes: slot.endMinutes,
+      duration: slot.duration
     };
     
-    // Get the highest stackOrder for this slot
-    const tasksInSlot = todos.filter(t => {
-      if (!t.scheduledSlot) return false;
-      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
-      const slotDateStr = serializedSlot.date;
-      return tDate === slotDateStr && 
-             t.scheduledSlot.startMinutes === slot.startMinutes &&
-             t.scheduledSlot.endMinutes === slot.endMinutes;
-    });
-    const maxOrder = tasksInSlot.length > 0 
-      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
-      : -1;
-    
-    // Update all selected tasks at once
     const taskIdSet = new Set(taskIds);
-    let currentOrder = maxOrder + 1;
+    const existingTasksInSlot = todos.filter(t => {
+      if (!t.scheduledSlot) return false;
+      const slotDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
+      const targetDate = typeof slot.date === 'string' ? slot.date : slot.date.toISOString();
+      return slotDate === targetDate && 
+             t.scheduledSlot.startMinutes === slot.startMinutes;
+    });
+    
+    let currentOrder = existingTasksInSlot.length;
     
     const updatedTodos = todos.map(t => {
       if (taskIdSet.has(t.id)) {
-        const updatedTask = { ...t, scheduledSlot: serializedSlot, stackOrder: currentOrder };
-        currentOrder++;
-        return updatedTask;
+        return { ...t, scheduledSlot: serializedSlot, stackOrder: currentOrder++ };
       }
       return t;
     });
     
     onUpdateTodos(updatedTodos);
-    
-    // If stack manager is open, refresh it with updated tasks
-    if (stackManagerData) {
-      const slotDateStr = serializedSlot.date;
-      const refreshedTasks = updatedTodos
-        .filter(t => {
-          if (!t.scheduledSlot) return false;
-          const tDate = typeof t.scheduledSlot.date === 'string' 
-            ? t.scheduledSlot.date 
-            : t.scheduledSlot.date.toISOString();
-          return tDate === slotDateStr && 
-                 t.scheduledSlot.startMinutes === slot.startMinutes &&
-                 t.scheduledSlot.endMinutes === slot.endMinutes;
-        })
-        .sort((a, b) => {
-          if (a.completed && !b.completed) return 1;
-          if (!a.completed && b.completed) return -1;
-          return (a.stackOrder || 0) - (b.stackOrder || 0);
-        });
-      
-      setStackManagerData({
-        slot: stackManagerData.slot,
-        tasks: refreshedTasks
-      });
-    }
-    
-    // Close the task scheduler
-    setShowTaskScheduler(false);
     setSelectedFreeSlot(null);
+    setShowTaskScheduler(false);
   };
 
   const handleToggleTaskComplete = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    const updatedTodos = todos.map(t => {
-      if (t.id !== taskId) return t;
-      const newCompleted = !t.completed;
-      // If completing a task, move it to the end of its stack
-      if (newCompleted && t.scheduledSlot) {
-        return { ...t, completed: newCompleted, stackOrder: Date.now() };
-      }
-      return { ...t, completed: newCompleted };
-    });
+    const updatedTodos = todos.map(t => 
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    onUpdateTodos(updatedTodos);
+  };
+
+  const handleUnscheduleTask = (taskId) => {
+    if (!todos || !onUpdateTodos) return;
+    const updatedTodos = todos.map(t => 
+      t.id === taskId ? { ...t, scheduledSlot: null } : t
+    );
+    onUpdateTodos(updatedTodos);
+  };
+
+  const handleDeleteTask = (taskId) => {
+    if (!todos || !onUpdateTodos) return;
+    const updatedTodos = todos.filter(t => t.id !== taskId);
     onUpdateTodos(updatedTodos);
     
-    // If stack manager is open, refresh it with updated tasks
     if (stackManagerData) {
-      const slot = stackManagerData.slot;
-      const slotDateStr = typeof slot.date === 'string' ? slot.date : slot.date.toISOString();
-      const refreshedTasks = updatedTodos
-        .filter(t => {
-          if (!t.scheduledSlot) return false;
-          const tDate = typeof t.scheduledSlot.date === 'string' 
-            ? t.scheduledSlot.date 
-            : t.scheduledSlot.date.toISOString();
-          return tDate === slotDateStr && 
-                 t.scheduledSlot.startMinutes === slot.startMinutes &&
-                 t.scheduledSlot.endMinutes === slot.endMinutes;
-        })
-        .sort((a, b) => {
-          if (a.completed && !b.completed) return 1;
-          if (!a.completed && b.completed) return -1;
-          return (a.stackOrder || 0) - (b.stackOrder || 0);
-        });
-      
-      setStackManagerData({
-        slot: stackManagerData.slot,
-        tasks: refreshedTasks
-      });
+      const updatedStackTasks = stackManagerData.tasks.filter(t => t.id !== taskId);
+      if (updatedStackTasks.length === 0) {
+        setStackManagerData(null);
+      } else {
+        setStackManagerData({ ...stackManagerData, tasks: updatedStackTasks });
+      }
     }
   };
 
-  const handleRemoveTaskSchedule = (taskId) => {
-    if (!todos || !onUpdateTodos) return;
-    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: null } : t));
+  const handleOpenScheduler = (slot) => {
+    setSelectedFreeSlot(slot);
+    setSelectedLesson(null);
+    setStackManagerData(null);
   };
 
   const handleOpenStackManager = (slotKey, tasks) => {
@@ -299,7 +299,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
 
   const handleReorderStack = (reorderedTasks) => {
     if (!todos || !onUpdateTodos) return;
-    // Update stack order based on position
     const taskMap = new Map(reorderedTasks.map((task, index) => [task.id, index]));
     const updatedTodos = todos.map(t => {
       if (taskMap.has(t.id)) {
@@ -326,7 +325,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   return (
     <div className="flex-1 flex min-h-0">
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        {/* Header */}
         <header className="shrink-0 px-8 py-5 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-sm z-10">
           <div className="flex items-center gap-4">
             <div>
@@ -349,7 +347,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           </div>
 
           <div className="flex items-center gap-3">
-            {/* View mode toggle */}
             <div className="flex items-center bg-sand rounded-full p-1">
               <button 
                 onClick={() => setViewMode('week')}
@@ -392,7 +389,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           </div>
         </header>
 
-        {/* Time Grid */}
         <div className="flex-1 overflow-auto">
           <div className="sticky top-0 z-10 bg-cream/95 backdrop-blur-sm border-b border-slate-100">
             <div className="flex">
@@ -427,7 +423,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           </div>
 
           <div className="flex">
-            {/* Time column */}
             <div className="w-16 shrink-0 relative" style={{ height: gridHeight }}>
               {hourLabels.map((h) => (
                 <div key={h} className="absolute left-0 right-0 text-right pr-2 -translate-y-2"
@@ -437,9 +432,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
               ))}
             </div>
 
-            {/* Day columns */}
             <div className={`flex-1 grid gap-2 px-2 relative ${viewMode === 'day' ? 'grid-cols-1' : 'grid-cols-5'}`}>
-              {/* Hour lines */}
               {hourLabels.map((h) => (
                 <div key={h} className="absolute left-0 right-0 border-t border-slate-100 pointer-events-none"
                   style={{ top: (h - startHour) * 60 * PX_PER_MINUTE }} />
@@ -455,38 +448,31 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                   .filter(t => {
                     if (!t.scheduledSlot) return false;
                     const slotDate = typeof t.scheduledSlot.date === 'string' 
-                      ? new Date(t.scheduledSlot.date) 
-                      : t.scheduledSlot.date;
-                    return slotDate.toDateString() === day.toDateString();
-                  })
-                  .sort((a, b) => {
-                    // Sort by stack order (completed tasks go to end)
-                    if (a.completed && !b.completed) return 1;
-                    if (!a.completed && b.completed) return -1;
-                    return (a.stackOrder || 0) - (b.stackOrder || 0);
+                      ? t.scheduledSlot.date 
+                      : t.scheduledSlot.date.toISOString();
+                    const dayDate = formatDateISO(day);
+                    return slotDate.startsWith(dayDate);
                   });
 
                 return (
                   <DayColumn
                     key={i}
                     day={day}
-                    dayNum={dayNum}
                     lessons={lessons}
                     duties={duties}
                     freePeriods={freePeriods}
                     scheduledTasks={scheduledTasksForDay}
+                    gridStartMin={gridStartMin}
+                    PX_PER_MINUTE={PX_PER_MINUTE}
                     timetableData={timetableData}
                     lessonInstances={lessonInstances}
-                    todos={todos}
-                    gridStartMin={gridStartMin}
-                    gridHeight={gridHeight}
-                    viewMode={viewMode}
-                    onLessonClick={handleLessonClick}
-                    onSelectFreeSlot={setSelectedFreeSlot}
-                    onToggleTaskComplete={handleToggleTaskComplete}
-                    onOpenStackManager={handleOpenStackManager}
                     hasInstanceData={hasInstanceData}
                     getLessonInstanceData={getLessonInstanceData}
+                    onLessonClick={handleLessonClick}
+                    onScheduleTask={handleOpenScheduler}
+                    onOpenStackManager={handleOpenStackManager}
+                    onToggleTaskComplete={handleToggleTaskComplete}
+                    selectedLesson={selectedLesson}
                   />
                 );
               })}
@@ -495,8 +481,7 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         </div>
       </div>
 
-      {/* Panels - only one should be visible at a time */}
-      {selectedLesson ? (
+      {selectedLesson && !selectedFreeSlot && !stackManagerData && (
         <LessonPanel
           lesson={selectedLesson}
           timetableData={timetableData}
@@ -504,42 +489,31 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           onUpdateInstance={onUpdateInstance}
           onClose={() => setSelectedLesson(null)}
         />
-      ) : showTaskScheduler && selectedFreeSlot && todos && onUpdateTodos ? (
+      )}
+
+      {selectedFreeSlot && !stackManagerData && (
         <TaskSchedulePanel
-          slot={selectedFreeSlot}
           todos={todos}
-          onScheduleTask={handleScheduleTask}
-          onScheduleMultipleTasks={handleScheduleMultipleTasks}
-          onClose={() => {
-            setShowTaskScheduler(false);
-            setSelectedFreeSlot(null);
-          }}
-        />
-      ) : selectedFreeSlot && todos && onUpdateTodos ? (
-        <TaskSchedulePanel
           slot={selectedFreeSlot}
-          todos={todos}
-          onScheduleTask={handleScheduleTask}
-          onScheduleMultipleTasks={handleScheduleMultipleTasks}
+          onSchedule={handleScheduleTask}
           onClose={() => setSelectedFreeSlot(null)}
         />
-      ) : stackManagerData ? (
+      )}
+
+      {stackManagerData && (
         <TaskStackManager
           slot={stackManagerData.slot}
           tasks={stackManagerData.tasks}
           onReorder={handleReorderStack}
-          onRemoveTask={handleRemoveTaskSchedule}
           onToggleComplete={handleToggleTaskComplete}
-          onAddMore={(slot) => {
-            setSelectedFreeSlot(slot);
+          onDelete={handleDeleteTask}
+          onAddMore={() => {
             setShowTaskScheduler(true);
+            setSelectedFreeSlot(stackManagerData.slot);
           }}
-          onClose={() => {
-            setStackManagerData(null);
-            setShowTaskScheduler(false);
-          }}
+          onClose={() => setStackManagerData(null)}
         />
-      ) : null}
+      )}
     </div>
   );
 }

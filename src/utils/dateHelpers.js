@@ -123,9 +123,8 @@ export function getDayOfWeek(date) {
 /**
  * Determine which timetable week (1 or 2) a given date falls in,
  * based on an anchor date that is known to be in Week 1.
- *
- * We count the number of whole weeks between the anchor's Monday
- * and the target's Monday. Even offsets = Week 1, odd = Week 2.
+ * IMPORTANT: This version does NOT account for holiday weeks.
+ * Use getWeekNumberWithHolidays for production code.
  *
  * @param {Date} date - the date to check
  * @param {string|Date} anchorDate - a date known to be in Week 1 (e.g. exportDate)
@@ -142,6 +141,52 @@ export function getWeekNumber(date, anchorDate) {
   // Use modulo to alternate: 0 → week 1, 1 → week 2, 2 → week 1, etc.
   // Handle negative weeks (dates before the anchor) correctly.
   const mod = ((diffWeeks % 2) + 2) % 2; // always 0 or 1
+  return mod === 0 ? 1 : 2;
+}
+
+/**
+ * Determine which timetable week (1 or 2) a given date falls in,
+ * accounting for holiday weeks that pause the timetable rotation.
+ *
+ * Holiday weeks are skipped when counting, so the timetable continues
+ * from where it left off after a holiday.
+ *
+ * @param {Date} date - the date to check
+ * @param {string|Date} anchorDate - a date known to be in Week 1 (e.g. exportDate)
+ * @param {Array<string>} holidayWeeks - array of Monday dates in YYYY-MM-DD format for holiday weeks
+ * @returns {number} 1 or 2
+ */
+export function getWeekNumberWithHolidays(date, anchorDate, holidayWeeks = []) {
+  const anchor = typeof anchorDate === 'string' ? new Date(anchorDate) : new Date(anchorDate);
+  const anchorMon = getMonday(anchor);
+  const targetMon = getMonday(date);
+
+  // Count the number of non-holiday weeks between anchor and target
+  let currentWeek = new Date(anchorMon);
+  let weekCount = 0;
+
+  if (targetMon >= anchorMon) {
+    // Moving forward in time
+    while (currentWeek < targetMon) {
+      const weekStart = formatDateISO(currentWeek);
+      if (!holidayWeeks.includes(weekStart)) {
+        weekCount++;
+      }
+      currentWeek.setDate(currentWeek.getDate() + 7);
+    }
+  } else {
+    // Moving backward in time
+    while (currentWeek > targetMon) {
+      currentWeek.setDate(currentWeek.getDate() - 7);
+      const weekStart = formatDateISO(currentWeek);
+      if (!holidayWeeks.includes(weekStart)) {
+        weekCount--;
+      }
+    }
+  }
+
+  // Apply modulo to get week 1 or 2
+  const mod = ((weekCount % 2) + 2) % 2;
   return mod === 0 ? 1 : 2;
 }
 

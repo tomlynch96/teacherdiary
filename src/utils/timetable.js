@@ -2,20 +2,21 @@
 // Maps recurring lesson definitions onto specific calendar days.
 // Supports both single-week and two-week timetable rotations.
 
-import { getDayOfWeek, timeToMinutes, getWeekNumber, getMonday, formatDateISO } from './dateHelpers';
+import { getDayOfWeek, timeToMinutes, getWeekNumber, getWeekNumberWithHolidays, getMonday, formatDateISO } from './dateHelpers';
 
 /**
  * Given the full timetable data and an array of 5 week-day Dates,
  * returns an object keyed by dayOfWeek (1-5) with sorted lesson arrays.
  *
  * For two-week timetables, we calculate which week (1 or 2) each date
- * falls in, and only show lessons matching that week number.
+ * falls in, accounting for holiday weeks, and only show lessons matching that week number.
  */
-export function getLessonsForWeek(timetableData, weekDays) {
+export function getLessonsForWeek(timetableData, weekDays, settings = null) {
   if (!timetableData?.recurringLessons) return {};
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const holidayWeeks = settings?.holidayWeeks || [];
 
   // Build a lookup map for class details
   const classMap = {};
@@ -29,10 +30,21 @@ export function getLessonsForWeek(timetableData, weekDays) {
 
   weekDays.forEach((date) => {
     const dayNum = getDayOfWeek(date); // 1=Mon ... 5=Fri
+    
+    // Check if this week is a holiday week
+    const monday = getMonday(date);
+    const mondayISO = formatDateISO(monday);
+    const isHolidayWeek = holidayWeeks.includes(mondayISO);
+    
+    // If this is a holiday week, return empty array for this day
+    if (isHolidayWeek) {
+      lessonsByDay[dayNum] = [];
+      return;
+    }
 
     // For two-week timetables, determine if this date is in week 1 or 2
     const currentWeekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(date, anchorDate)
+      ? getWeekNumberWithHolidays(date, anchorDate, holidayWeeks)
       : null;
 
     const dayLessons = timetableData.recurringLessons
@@ -59,18 +71,31 @@ export function getLessonsForWeek(timetableData, weekDays) {
 /**
  * Get duties (break duty, line manage, detention) for the given week.
  */
-export function getDutiesForWeek(timetableData, weekDays) {
+export function getDutiesForWeek(timetableData, weekDays, settings = null) {
   if (!timetableData?.duties?.length) return {};
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const holidayWeeks = settings?.holidayWeeks || [];
 
   const dutiesByDay = {};
 
   weekDays.forEach((date) => {
     const dayNum = getDayOfWeek(date);
+    
+    // Check if this week is a holiday week
+    const monday = getMonday(date);
+    const mondayISO = formatDateISO(monday);
+    const isHolidayWeek = holidayWeeks.includes(mondayISO);
+    
+    // If this is a holiday week, return empty array for this day
+    if (isHolidayWeek) {
+      dutiesByDay[dayNum] = [];
+      return;
+    }
+    
     const currentWeekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(date, anchorDate)
+      ? getWeekNumberWithHolidays(date, anchorDate, holidayWeeks)
       : null;
 
     dutiesByDay[dayNum] = (timetableData.duties || []).filter((d) => {
@@ -236,13 +261,15 @@ export function lessonInstanceKey(classId, date) {
  * @param {string} classId
  * @param {object} timetableData
  * @param {number} weeksAhead - how many weeks to project (default 20 = ~half a term)
+ * @param {object} settings - optional settings with holidayWeeks array
  * @returns {Array} sorted array of { date, dayName, startTime, endTime, period, room, key }
  */
-export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
+export function generateFutureLessons(classId, timetableData, weeksAhead = 20, settings = null) {
   if (!timetableData?.recurringLessons) return [];
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const holidayWeeks = settings?.holidayWeeks || [];
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const classLessons = timetableData.recurringLessons.filter(
@@ -261,7 +288,7 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
     weekStart.setDate(startMonday.getDate() + w * 7);
 
     const weekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(weekStart, anchorDate)
+      ? getWeekNumberWithHolidays(weekStart, anchorDate, holidayWeeks)
       : null;
 
     for (let d = 0; d < 5; d++) {
