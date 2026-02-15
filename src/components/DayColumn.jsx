@@ -3,7 +3,7 @@ import { isToday, timeToMinutes } from '../utils/dateHelpers';
 import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
 import FreePeriodSlot from './FreePeriodSlot';
-import ScheduledTaskCard from './ScheduledTaskCard';
+import TaskStack from './TaskStack';
 import { getClassColor, lessonInstanceKey } from '../utils/timetable';
 import { formatDateISO } from '../utils/dateHelpers';
 
@@ -25,7 +25,7 @@ export default function DayColumn({
   onLessonClick,
   onSelectFreeSlot,
   onToggleTaskComplete,
-  onRemoveTaskSchedule,
+  onOpenStackManager,
   hasInstanceData,
   getLessonInstanceData,
 }) {
@@ -33,6 +33,17 @@ export default function DayColumn({
 
   const timeToTop = (timeStr) => (timeToMinutes(timeStr) - gridStartMin) * PX_PER_MINUTE;
   const durationToHeight = (s, e) => (timeToMinutes(e) - timeToMinutes(s)) * PX_PER_MINUTE;
+
+  // Group scheduled tasks by their time slot
+  const taskStacks = {};
+  scheduledTasks.forEach(task => {
+    const slot = task.scheduledSlot;
+    const slotKey = `${formatDateISO(typeof slot.date === 'string' ? new Date(slot.date) : slot.date)}-${slot.startMinutes}-${slot.endMinutes}`;
+    if (!taskStacks[slotKey]) {
+      taskStacks[slotKey] = [];
+    }
+    taskStacks[slotKey].push(task);
+  });
 
   return (
     <div className={`relative ${today ? 'bg-[#81B29A]/[0.03] rounded-2xl' : ''}`} style={{ height: gridHeight }}>
@@ -47,15 +58,16 @@ export default function DayColumn({
         />
       ))}
 
-      {/* Scheduled tasks */}
-      {scheduledTasks.map((task) => (
-        <ScheduledTaskCard
-          key={`task-${task.id}`}
-          task={task}
+      {/* Task stacks */}
+      {Object.entries(taskStacks).map(([slotKey, tasks]) => (
+        <TaskStack
+          key={slotKey}
+          tasks={tasks}
           gridStartMin={gridStartMin}
           pxPerMinute={PX_PER_MINUTE}
           onToggleComplete={onToggleTaskComplete}
-          onRemoveSchedule={onRemoveTaskSchedule}
+          onOpenManager={onOpenStackManager}
+          slotKey={slotKey}
         />
       ))}
 
@@ -77,7 +89,6 @@ export default function DayColumn({
         const accent = getClassColor(lesson.classId, timetableData.classes);
         const hasData = hasInstanceData(lesson);
         const instanceData = getLessonInstanceData(lesson);
-        const isSelected = false; // Handled by parent
 
         return (
           <div
