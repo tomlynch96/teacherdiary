@@ -422,9 +422,16 @@ export default function WeekView({
                     onFreePeriodClick={(slot) => setSelectedFreeSlot(slot)}
                     onTaskStackClick={handleOpenStackManager}
                     onTaskComplete={(taskId) => {
-                      const updatedTodos = todos.map(t =>
-                        t.id === taskId ? { ...t, completed: !t.completed } : t
-                      );
+                      if (!todos || !onUpdateTodos) return;
+                      const updatedTodos = todos.map(t => {
+                        if (t.id !== taskId) return t;
+                        const newCompleted = !t.completed;
+                        // If completing a task, move it to the end of its stack
+                        if (newCompleted && t.scheduledSlot) {
+                          return { ...t, completed: newCompleted, stackOrder: Date.now() };
+                        }
+                        return { ...t, completed: newCompleted };
+                      });
                       onUpdateTodos(updatedTodos);
                     }}
                     hasLessonData={hasLessonData}
@@ -454,33 +461,58 @@ export default function WeekView({
         <TaskSchedulePanel
           slot={selectedFreeSlot}
           todos={todos}
-          onSchedule={handleScheduleMultipleTasks}
+          onScheduleMultipleTasks={handleScheduleMultipleTasks}
           onClose={() => setSelectedFreeSlot(null)}
         />
       )}
 
       {stackManagerData && !selectedLesson && !selectedFreeSlot && (
         <TaskStackManager
-          slot={stackManagerData.slot}
-          tasks={stackManagerData.tasks}
-          onReorder={handleReorderStack}
-          onDelete={handleDeleteTask}
-          onComplete={(taskId) => {
-            const updatedTodos = todos.map(t =>
-              t.id === taskId ? { ...t, completed: !t.completed } : t
-            );
-            onUpdateTodos(updatedTodos);
-          }}
-          onAddMore={() => setShowTaskScheduler(true)}
-          onClose={() => setStackManagerData(null)}
-        />
+        slot={stackManagerData.slot}
+        tasks={stackManagerData.tasks}
+        onReorder={handleReorderStack}
+        onDelete={handleDeleteTask}
+        onToggleComplete={(taskId) => {     // NEW CODE STARTS HERE
+          if (!todos || !onUpdateTodos) return;
+          const updatedTodos = todos.map(t => {
+            if (t.id !== taskId) return t;
+            const newCompleted = !t.completed;
+            if (newCompleted && t.scheduledSlot) {
+              return { ...t, completed: newCompleted, stackOrder: Date.now() };
+            }
+            return { ...t, completed: newCompleted };
+          });
+          onUpdateTodos(updatedTodos);
+          
+          const slot = stackManagerData.slot;
+          const slotDate = typeof slot.date === 'string' ? slot.date : slot.date.toISOString();
+          const refreshedTasks = updatedTodos
+            .filter(t => {
+              if (!t.scheduledSlot) return false;
+              const tDate = typeof t.scheduledSlot.date === 'string' 
+                ? t.scheduledSlot.date 
+                : t.scheduledSlot.date.toISOString();
+              return tDate.split('T')[0] === slotDate.split('T')[0] &&
+                     t.scheduledSlot.startMinutes === slot.startMinutes;
+            })
+            .sort((a, b) => {
+              if (a.completed && !b.completed) return 1;
+              if (!a.completed && b.completed) return -1;
+              return (a.stackOrder || 0) - (b.stackOrder || 0);
+            });
+          
+          setStackManagerData({ slot, tasks: refreshedTasks });
+        }}                                   // NEW CODE ENDS HERE
+        onAddMore={() => setShowTaskScheduler(true)}
+        onClose={() => setStackManagerData(null)}
+      />
       )}
 
       {showTaskScheduler && stackManagerData && (
         <TaskSchedulePanel
           slot={stackManagerData.slot}
           todos={todos}
-          onSchedule={handleScheduleMultipleTasks}
+          onScheduleMultipleTasks={handleScheduleMultipleTasks}
           onClose={() => setShowTaskScheduler(false)}
         />
       )}

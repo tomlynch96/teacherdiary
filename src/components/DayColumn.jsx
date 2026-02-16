@@ -90,18 +90,15 @@ export default function DayColumn({
       {Object.entries(tasksBySlot).map(([slotKey, slotTasks]) => {
         if (slotTasks.length === 0) return null;
         
-        const firstTask = slotTasks[0];
-        const slot = firstTask.scheduledSlot;
-        
         return (
           <TaskStack
             key={slotKey}
-            slot={slot}
             tasks={slotTasks}
             gridStartMin={gridStartMin}
             pxPerMinute={pxPerMinute}
-            onClick={() => onTaskStackClick(slotKey, slotTasks)}
-            onTaskComplete={onTaskComplete}
+            onOpenManager={() => onTaskStackClick(slotKey, slotTasks)}
+            onToggleComplete={onTaskComplete}
+            slotKey={slotKey}
           />
         );
       })}
