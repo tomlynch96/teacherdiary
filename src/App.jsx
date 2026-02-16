@@ -8,8 +8,10 @@ import {
   getTimetableData,
   setTimetableData,
   clearTimetableData,
-  getLessonInstances,
-  setLessonInstances,
+  getLessonSequences,
+  setLessonSequences,
+  getLessonSchedules,
+  setLessonSchedules,
   getTodos,
   setTodos,
 } from './utils/storage';
@@ -17,13 +19,15 @@ import {
 // ===== App =====
 // Root component. Manages:
 // - Timetable data (imported JSON + class edits)
-// - Lesson instances (per-lesson titles, notes, links keyed by "classId::date")
+// - Lesson sequences (what lessons exist, in order, per class)
+// - Lesson schedules (which lesson is on which date)
 // - To-do list (tasks with scheduling)
 // - Current navigation view
 
 export default function App() {
   const [timetable, setTimetable] = useState(null);
-  const [lessonInstances, setLessonInstancesState] = useState({});
+  const [lessonSequences, setLessonSequencesState] = useState({});
+  const [lessonSchedules, setLessonSchedulesState] = useState({});
   const [todos, setTodosState] = useState([]);
   const [currentView, setCurrentView] = useState('week');
   const [loading, setLoading] = useState(true);
@@ -33,8 +37,11 @@ export default function App() {
     const savedTimetable = getTimetableData();
     if (savedTimetable) setTimetable(savedTimetable);
     
-    const savedInstances = getLessonInstances();
-    if (savedInstances) setLessonInstancesState(savedInstances);
+    const savedSequences = getLessonSequences();
+    if (savedSequences) setLessonSequencesState(savedSequences);
+    
+    const savedSchedules = getLessonSchedules();
+    if (savedSchedules) setLessonSchedulesState(savedSchedules);
     
     const savedTodos = getTodos();
     if (savedTodos) setTodosState(savedTodos);
@@ -51,7 +58,8 @@ export default function App() {
     if (window.confirm('Clear your timetable data? You can re-import it anytime.')) {
       clearTimetableData();
       setTimetable(null);
-      setLessonInstancesState({});
+      setLessonSequencesState({});
+      setLessonSchedulesState({});
       setCurrentView('week');
     }
   };
@@ -70,13 +78,16 @@ export default function App() {
     });
   };
 
-  // Update a lesson instance (title, notes, links for a specific class+date)
-  const handleUpdateInstance = (key, data) => {
-    setLessonInstancesState((prev) => {
-      const updated = { ...prev, [key]: data };
-      setLessonInstances(updated);
-      return updated;
-    });
+  // Update lesson sequences
+  const handleUpdateSequences = (newSequences) => {
+    setLessonSequencesState(newSequences);
+    setLessonSequences(newSequences);
+  };
+
+  // Update lesson schedules
+  const handleUpdateSchedules = (newSchedules) => {
+    setLessonSchedulesState(newSchedules);
+    setLessonSchedules(newSchedules);
   };
 
   // Update todos
@@ -107,8 +118,10 @@ export default function App() {
         ) : currentView === 'week' ? (
           <WeekView
             timetableData={timetable}
-            lessonInstances={lessonInstances}
-            onUpdateInstance={handleUpdateInstance}
+            lessonSequences={lessonSequences}
+            lessonSchedules={lessonSchedules}
+            onUpdateSequences={handleUpdateSequences}
+            onUpdateSchedules={handleUpdateSchedules}
             onClearData={handleClearData}
             todos={todos}
             onUpdateTodos={handleUpdateTodos}
@@ -116,9 +129,11 @@ export default function App() {
         ) : currentView === 'class' ? (
           <ClassView
             timetableData={timetable}
-            lessonInstances={lessonInstances}
+            lessonSequences={lessonSequences}
+            lessonSchedules={lessonSchedules}
             onUpdateClass={handleUpdateClass}
-            onUpdateInstance={handleUpdateInstance}
+            onUpdateSequences={handleUpdateSequences}
+            onUpdateSchedules={handleUpdateSchedules}
           />
         ) : currentView === 'todos' ? (
           <ToDoView

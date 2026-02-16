@@ -1,111 +1,108 @@
 import React from 'react';
-import { isToday, timeToMinutes } from '../utils/dateHelpers';
 import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
 import FreePeriodSlot from './FreePeriodSlot';
 import TaskStack from './TaskStack';
-import { getClassColor, lessonInstanceKey } from '../utils/timetable';
-import { formatDateISO } from '../utils/dateHelpers';
 
-const PX_PER_MINUTE = 1.8;
+// ===== DayColumn =====
+// Renders a single day column in the week view with lessons, duties, and tasks
 
 export default function DayColumn({
   day,
-  dayNum,
-  lessons,
-  duties,
-  freePeriods,
-  scheduledTasks,
-  timetableData,
-  lessonInstances,
-  todos,
+  lessons = [], // Default to empty array
+  duties = [], // Default to empty array
+  freePeriods = [], // Default to empty array
+  tasks = [], // Default to empty array
   gridStartMin,
-  gridHeight,
-  viewMode,
+  pxPerMinute,
   onLessonClick,
-  onSelectFreeSlot,
-  onToggleTaskComplete,
-  onOpenStackManager,
-  hasInstanceData,
-  getLessonInstanceData,
+  onFreePeriodClick,
+  onTaskStackClick,
+  onTaskComplete,
+  hasLessonData,
+  classes,
 }) {
-  const today = isToday(day);
+  // Group tasks by their time slot
+  const tasksBySlot = {};
+  
+  if (tasks && Array.isArray(tasks)) {
+    tasks.forEach(task => {
+      if (!task.scheduledSlot) return;
+      const key = `${task.scheduledSlot.startMinutes}-${task.scheduledSlot.endMinutes}`;
+      if (!tasksBySlot[key]) {
+        tasksBySlot[key] = [];
+      }
+      tasksBySlot[key].push(task);
+    });
+  }
 
-  const timeToTop = (timeStr) => (timeToMinutes(timeStr) - gridStartMin) * PX_PER_MINUTE;
-  const durationToHeight = (s, e) => (timeToMinutes(e) - timeToMinutes(s)) * PX_PER_MINUTE;
-
-  // Group scheduled tasks by their time slot
-  const taskStacks = {};
-  scheduledTasks.forEach(task => {
-    const slot = task.scheduledSlot;
-    const slotKey = `${formatDateISO(typeof slot.date === 'string' ? new Date(slot.date) : slot.date)}-${slot.startMinutes}-${slot.endMinutes}`;
-    if (!taskStacks[slotKey]) {
-      taskStacks[slotKey] = [];
-    }
-    taskStacks[slotKey].push(task);
+  // Sort tasks in each slot by stackOrder
+  Object.keys(tasksBySlot).forEach(key => {
+    tasksBySlot[key].sort((a, b) => (a.stackOrder || 0) - (b.stackOrder || 0));
   });
 
   return (
-    <div className={`relative ${today ? 'bg-[#81B29A]/[0.03] rounded-2xl' : ''}`} style={{ height: gridHeight }}>
-      {/* Free periods */}
-      {freePeriods.map((period, pi) => (
-        <FreePeriodSlot
-          key={`free-${pi}`}
-          period={period}
+    <div className="relative">
+      {/* Lessons */}
+      {lessons && lessons.length > 0 && lessons.map((lesson, i) => (
+        <LessonCard
+          key={i}
+          lesson={lesson}
           gridStartMin={gridStartMin}
-          pxPerMinute={PX_PER_MINUTE}
-          onSelect={onSelectFreeSlot}
-        />
-      ))}
-
-      {/* Task stacks */}
-      {Object.entries(taskStacks).map(([slotKey, tasks]) => (
-        <TaskStack
-          key={slotKey}
-          tasks={tasks}
-          gridStartMin={gridStartMin}
-          pxPerMinute={PX_PER_MINUTE}
-          onToggleComplete={onToggleTaskComplete}
-          onOpenManager={onOpenStackManager}
-          slotKey={slotKey}
+          pxPerMinute={pxPerMinute}
+          onClick={() => onLessonClick(lesson)}
+          hasData={hasLessonData ? hasLessonData(lesson) : false}
+          classes={classes}
         />
       ))}
 
       {/* Duties */}
-      {duties.map((duty, di) => {
-        const top = timeToTop(duty.startTime);
-        const height = durationToHeight(duty.startTime, duty.endTime);
-        return (
-          <div key={`duty-${di}`} className="absolute left-1 right-1 z-[2]" style={{ top, height, minHeight: 28 }}>
-            <DutyCard duty={duty} />
-          </div>
-        );
+      {duties && duties.length > 0 && duties.map((duty, i) => (
+        <DutyCard
+          key={i}
+          duty={duty}
+          gridStartMin={gridStartMin}
+          pxPerMinute={pxPerMinute}
+        />
+      ))}
+
+      {/* Free Periods with hover-to-show + icon */}
+      {freePeriods && freePeriods.length > 0 && freePeriods.map((slot, i) => {
+        const slotKey = `${slot.startMinutes}-${slot.endMinutes}`;
+        const slotTasks = tasksBySlot[slotKey] || [];
+        
+        // Only show free period slot if there are no tasks scheduled
+        if (slotTasks.length === 0) {
+          return (
+            <FreePeriodSlot
+              key={i}
+              slot={slot}
+              gridStartMin={gridStartMin}
+              pxPerMinute={pxPerMinute}
+              onClick={() => onFreePeriodClick(slot)}
+            />
+          );
+        }
+        return null;
       })}
 
-      {/* Lessons */}
-      {lessons.map((lesson) => {
-        const top = timeToTop(lesson.startTime);
-        const height = durationToHeight(lesson.startTime, lesson.endTime);
-        const accent = getClassColor(lesson.classId, timetableData.classes);
-        const hasData = hasInstanceData(lesson);
-        const instanceData = getLessonInstanceData(lesson);
-
+      {/* Task Stacks */}
+      {Object.entries(tasksBySlot).map(([slotKey, slotTasks]) => {
+        if (slotTasks.length === 0) return null;
+        
+        const firstTask = slotTasks[0];
+        const slot = firstTask.scheduledSlot;
+        
         return (
-          <div
-            key={lesson.id}
-            className="absolute left-1 right-1 z-[3]"
-            style={{ top, height }}
-          >
-            <LessonCard
-              lesson={lesson}
-              height={height}
-              accent={accent}
-              hasData={hasData}
-              onClick={onLessonClick}
-              showTitle={viewMode === 'day'}
-              instanceData={instanceData}
-            />
-          </div>
+          <TaskStack
+            key={slotKey}
+            slot={slot}
+            tasks={slotTasks}
+            gridStartMin={gridStartMin}
+            pxPerMinute={pxPerMinute}
+            onClick={() => onTaskStackClick(slotKey, slotTasks)}
+            onTaskComplete={onTaskComplete}
+          />
         );
       })}
     </div>

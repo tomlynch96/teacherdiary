@@ -6,6 +6,8 @@ const KEYS = {
   TIMETABLE: 'timetableData',
   LESSONS: 'lessons',
   LESSON_INSTANCES: 'lessonInstances',
+  LESSON_SEQUENCES: 'lessonSequences', // NEW: Lesson content sequences per class
+  LESSON_SCHEDULES: 'lessonSchedules', // NEW: Schedule mapping (sequence index -> date)
   TODOS: 'todos',
   SETTINGS: 'settings',
 };
@@ -50,11 +52,146 @@ export function clearTimetableData() {
   removeItem(KEYS.TIMETABLE);
   removeItem(KEYS.LESSONS);
   removeItem(KEYS.LESSON_INSTANCES);
+  removeItem(KEYS.LESSON_SEQUENCES);
+  removeItem(KEYS.LESSON_SCHEDULES);
 }
 
-// ---- Lesson Instances ----
-// Keyed by "classId::YYYY-MM-DD" e.g. "12G2::2026-02-09"
-// Each value: { title, notes, links: [{url, label}] }
+// ---- Lesson Sequences ----
+// Keyed by classId, value is array of lesson objects in sequence order
+// Each lesson: { id, title, notes, links, sequenceIndex }
+
+export function getLessonSequences() {
+  return getItem(KEYS.LESSON_SEQUENCES) || {};
+}
+
+export function setLessonSequences(sequences) {
+  return setItem(KEYS.LESSON_SEQUENCES, sequences);
+}
+
+export function getClassSequence(classId) {
+  const sequences = getLessonSequences();
+  return sequences[classId] || [];
+}
+
+export function updateClassSequence(classId, lessons) {
+  const sequences = getLessonSequences();
+  sequences[classId] = lessons;
+  setLessonSequences(sequences);
+  return sequences;
+}
+
+export function addLessonToSequence(classId, lesson) {
+  const sequence = getClassSequence(classId);
+  const newLesson = {
+    id: `${classId}-lesson-${Date.now()}`,
+    title: lesson.title || '',
+    notes: lesson.notes || '',
+    links: lesson.links || [],
+    sequenceIndex: sequence.length,
+    ...lesson,
+  };
+  sequence.push(newLesson);
+  return updateClassSequence(classId, sequence);
+}
+
+export function updateLessonInSequence(classId, lessonId, updates) {
+  const sequence = getClassSequence(classId);
+  const updatedSequence = sequence.map(lesson =>
+    lesson.id === lessonId ? { ...lesson, ...updates } : lesson
+  );
+  return updateClassSequence(classId, updatedSequence);
+}
+
+export function deleteLessonFromSequence(classId, lessonId) {
+  const sequence = getClassSequence(classId);
+  const updatedSequence = sequence
+    .filter(lesson => lesson.id !== lessonId)
+    .map((lesson, index) => ({ ...lesson, sequenceIndex: index }));
+  return updateClassSequence(classId, updatedSequence);
+}
+
+export function reorderLessonSequence(classId, fromIndex, toIndex) {
+  const sequence = getClassSequence(classId);
+  const result = Array.from(sequence);
+  const [removed] = result.splice(fromIndex, 1);
+  result.splice(toIndex, 0, removed);
+  const reindexed = result.map((lesson, index) => ({ ...lesson, sequenceIndex: index }));
+  return updateClassSequence(classId, reindexed);
+}
+
+// ---- Lesson Schedules ----
+// Maps lesson sequence positions to calendar dates
+// Keyed by classId, value is array of schedule entries
+// Each entry: { sequenceIndex, date }
+
+export function getLessonSchedules() {
+  return getItem(KEYS.LESSON_SCHEDULES) || {};
+}
+
+export function setLessonSchedules(schedules) {
+  return setItem(KEYS.LESSON_SCHEDULES, schedules);
+}
+
+export function getClassSchedule(classId) {
+  const schedules = getLessonSchedules();
+  return schedules[classId] || [];
+}
+
+export function updateClassSchedule(classId, schedule) {
+  const schedules = getLessonSchedules();
+  schedules[classId] = schedule;
+  setLessonSchedules(schedules);
+  return schedules;
+}
+
+export function scheduleLesson(classId, sequenceIndex, date) {
+  const schedule = getClassSchedule(classId);
+  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+  
+  // Remove any existing schedule for this date
+  const filtered = schedule.filter(entry => entry.date !== dateStr);
+  
+  // Add new schedule entry
+  filtered.push({ sequenceIndex, date: dateStr });
+  
+  // Sort by date
+  filtered.sort((a, b) => a.date.localeCompare(b.date));
+  
+  return updateClassSchedule(classId, filtered);
+}
+
+export function unscheduleLesson(classId, date) {
+  const schedule = getClassSchedule(classId);
+  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+  const filtered = schedule.filter(entry => entry.date !== dateStr);
+  return updateClassSchedule(classId, filtered);
+}
+
+export function getScheduledLessonForDate(classId, date) {
+  const schedule = getClassSchedule(classId);
+  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+  return schedule.find(entry => entry.date === dateStr);
+}
+
+export function pushBackSchedule(classId, fromDate, shiftAmount = 1) {
+  const schedule = getClassSchedule(classId);
+  const fromDateStr = typeof fromDate === 'string' ? fromDate : fromDate.toISOString().split('T')[0];
+  
+  const updatedSchedule = schedule.map(entry => {
+    if (entry.date >= fromDateStr) {
+      const date = new Date(entry.date);
+      date.setDate(date.getDate() + shiftAmount);
+      return { ...entry, date: date.toISOString().split('T')[0] };
+    }
+    return entry;
+  });
+  
+  return updateClassSchedule(classId, updatedSchedule);
+}
+
+// ---- Legacy Lesson Instances (deprecated, kept for migration) ----
+// Old system: keyed by "classId::YYYY-MM-DD"
+// Will be migrated to new sequence/schedule system
 
 export function getLessonInstances() {
   return getItem(KEYS.LESSON_INSTANCES) || {};
