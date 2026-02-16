@@ -9,6 +9,7 @@ import {
   Pencil,
   BookOpen,
   CalendarRange,
+  CalendarDays,
   Link2,
   Plus,
   Trash2,
@@ -17,6 +18,7 @@ import {
   ChevronDown,
   GripVertical,
   ArrowDownToLine,
+  RotateCcw,
 } from 'lucide-react';
 import { getClassColor, generateTimetableOccurrences } from '../utils/timetable';
 import { formatTime, formatDateISO, MONTH_NAMES_SHORT, DAY_NAMES_SHORT } from '../utils/dateHelpers';
@@ -77,10 +79,11 @@ function formatShortDate(date) {
 function LessonSequenceRow({
   lesson,
   index,
-  scheduledDate,
+  scheduledOccurrence,
   accent,
   onUpdate,
   onDelete,
+  onSyncToDate,
   onDragStart,
   onDragOver,
   onDrop,
@@ -93,6 +96,7 @@ function LessonSequenceRow({
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const dateInputRef = React.useRef(null);
 
   React.useEffect(() => {
     setTitle(lesson.title || '');
@@ -152,12 +156,43 @@ function LessonSequenceRow({
           {title || 'Untitled lesson'}
         </span>
 
-        {/* Scheduled date */}
-        {scheduledDate && (
-          <span className="text-[11px] text-navy/30 shrink-0 tabular-nums">
-            {formatShortDate(scheduledDate)}
-          </span>
-        )}
+        {/* Scheduled date + time pill + sync button */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {scheduledOccurrence ? (
+            <>
+              <span className="text-[11px] font-medium text-navy/50 tabular-nums bg-sand/80 px-2 py-0.5 rounded-lg">
+                {formatShortDate(scheduledOccurrence.date)}
+              </span>
+              <span className="text-[10px] text-navy/30 tabular-nums">
+                {formatTime(scheduledOccurrence.startTime)} · P{scheduledOccurrence.period}
+              </span>
+            </>
+          ) : (
+            <span className="text-[10px] text-navy/15 italic">No date</span>
+          )}
+          {/* Sync to date button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              dateInputRef.current?.showPicker();
+            }}
+            className="p-1 rounded-lg text-navy/15 hover:text-sage hover:bg-sage/5 transition-smooth"
+            title="Sync this lesson to a specific date"
+          >
+            <CalendarDays size={14} />
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            className="sr-only"
+            onChange={(e) => {
+              if (e.target.value) {
+                onSyncToDate(lesson.order, e.target.value);
+                e.target.value = '';
+              }
+            }}
+          />
+        </div>
 
         {/* Content indicator */}
         {hasContent && !expanded && (
@@ -173,6 +208,18 @@ function LessonSequenceRow({
       {/* Expanded editor */}
       {expanded && (
         <div className="px-4 pb-4 pt-1 border-t border-slate-50 space-y-3">
+          {/* Scheduled date banner */}
+          {scheduledOccurrence && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sand/60 text-xs text-navy/50">
+              <CalendarRange size={13} className="shrink-0 text-navy/30" />
+              <span>
+                Scheduled for <span className="font-semibold text-navy/70">{formatShortDate(scheduledOccurrence.date)}</span>
+                {' · '}{formatTime(scheduledOccurrence.startTime)}–{formatTime(scheduledOccurrence.endTime)}
+                {' · '}P{scheduledOccurrence.period}
+                {scheduledOccurrence.room && <> · {scheduledOccurrence.room}</>}
+              </span>
+            </div>
+          )}
           <input
             type="text"
             value={title}
@@ -302,11 +349,12 @@ export default function ClassView({
     return getClassSchedule(selectedClass.id);
   }, [selectedClass, lessonSchedules]);
 
-  // Map each lesson in the sequence to its scheduled date
-  const getScheduledDate = (lessonOrder) => {
-    const occurrenceNum = lessonOrder - classScheduleData.startIndex;
+  // Map each lesson in the sequence to its scheduled occurrence (date + time + period)
+  // startIndex = how many timetable slots to skip (push back shifts lessons to later dates)
+  const getScheduledOccurrence = (lessonOrder) => {
+    const occurrenceNum = lessonOrder + classScheduleData.startIndex;
     if (occurrenceNum < 0 || occurrenceNum >= occurrences.length) return null;
-    return occurrences[occurrenceNum]?.date || null;
+    return occurrences[occurrenceNum] || null;
   };
 
   const startEdit = (field, currentValue) => {
@@ -384,6 +432,20 @@ export default function ClassView({
     if (!selectedClass) return;
     const current = getClassSchedule(selectedClass.id);
     onUpdateSchedule(selectedClass.id, { startIndex: current.startIndex + 1 });
+  };
+
+  // Sync a lesson to a specific date: adjusts startIndex so that
+  // the given lesson (by order) maps to the timetable occurrence on that date.
+  // Everything below it in the sequence shifts accordingly.
+  const handleSyncToDate = (lessonOrder, dateISO) => {
+    if (!selectedClass) return;
+    // Find the occurrence that falls on or after the chosen date
+    const targetOcc = occurrences.find(occ => occ.dateISO >= dateISO);
+    if (!targetOcc) return; // no future occurrence found for that date
+    // startIndex = occurrenceNum - lessonOrder
+    // so that: lessonOrder + startIndex = occurrenceNum
+    const newStartIndex = targetOcc.occurrenceNum - lessonOrder;
+    onUpdateSchedule(selectedClass.id, { startIndex: Math.max(0, newStartIndex) });
   };
 
   return (
@@ -559,15 +621,28 @@ export default function ClassView({
                 </h3>
                 <div className="flex items-center gap-2">
                   {showAllLessons && classSequence.length > 0 && (
-                    <button
-                      onClick={handlePushBack}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium
-                                 text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth"
-                      title="Push all lessons back by one timetable slot"
-                    >
-                      <ArrowDownToLine size={14} />
-                      Push Back
-                    </button>
+                    <>
+                      {classScheduleData.startIndex > 0 && (
+                        <button
+                          onClick={() => onUpdateSchedule(selectedClass.id, { startIndex: 0 })}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium
+                                     text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth"
+                          title="Reset alignment — lesson #1 starts at the next available slot"
+                        >
+                          <RotateCcw size={13} />
+                          Reset
+                        </button>
+                      )}
+                      <button
+                        onClick={handlePushBack}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium
+                                   text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth"
+                        title="Push all lessons back by one timetable slot"
+                      >
+                        <ArrowDownToLine size={14} />
+                        Push Back
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => setShowAllLessons(!showAllLessons)}
@@ -594,10 +669,11 @@ export default function ClassView({
                         key={lesson.id}
                         lesson={lesson}
                         index={i}
-                        scheduledDate={getScheduledDate(lesson.order)}
+                        scheduledOccurrence={getScheduledOccurrence(lesson.order)}
                         accent={getClassColor(selectedClass.id, classes)}
                         onUpdate={handleUpdateLesson}
                         onDelete={handleDeleteLesson}
+                        onSyncToDate={handleSyncToDate}
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop}

@@ -172,11 +172,13 @@ export function setClassSchedule(classId, schedule) {
 
 /**
  * Given a class and timetable occurrence number, get the lesson content.
- * Returns the lesson object from the sequence, or null if none mapped.
+ * startIndex = how many timetable slots are skipped (push back).
+ * So occurrence 0 with startIndex 2 means the first two slots have no lesson,
+ * and occurrence 2 maps to sequence[0].
  */
 export function getLessonForOccurrence(classId, occurrenceNum) {
   const schedule = getClassSchedule(classId);
-  const sequenceIndex = schedule.startIndex + occurrenceNum;
+  const sequenceIndex = occurrenceNum - schedule.startIndex;
   const sequence = getClassSequence(classId);
   if (sequenceIndex < 0 || sequenceIndex >= sequence.length) return null;
   return sequence[sequenceIndex];

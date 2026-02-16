@@ -243,12 +243,14 @@ export default function WeekView({
     return content && (content.title || content.notes || (content.links && content.links.length > 0));
   };
 
-  // Get lesson content from the sequence system
+  // Get lesson content from the sequence system (with occurrence number)
   const getLessonInstanceData = (lesson) => {
     const dateStr = formatDateISO(lesson.date);
     const occNum = getOccurrenceForDate(lesson.classId, dateStr, lesson.startTime, timetableData);
     if (occNum === null) return null;
-    return getLessonForOccurrence(lesson.classId, occNum);
+    const content = getLessonForOccurrence(lesson.classId, occNum);
+    if (!content) return null;
+    return { ...content, _occurrenceNum: occNum };
   };
 
   const daysToRender = viewMode === 'day' && selectedDay ? [selectedDay] : weekDays;
