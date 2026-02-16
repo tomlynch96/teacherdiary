@@ -27,19 +27,29 @@ import {
   getDutiesForWeek,
   mergeConsecutiveLessons,
   getTimeRange,
-  lessonInstanceKey,
+  getOccurrenceForDate,
 } from '../utils/timetable';
+import { getLessonForOccurrence } from '../utils/storage';
 
 const PX_PER_MINUTE = 1.8;
 
-export default function WeekView({ timetableData, lessonInstances, onUpdateInstance, onClearData, todos, onUpdateTodos }) {
+export default function WeekView({
+  timetableData,
+  lessonSequences,
+  lessonSchedules,
+  onUpdateLesson,
+  onAddLesson,
+  onClearData,
+  todos,
+  onUpdateTodos,
+}) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [viewMode, setViewMode] = useState('week');
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
   const [selectedFreeSlot, setSelectedFreeSlot] = useState(null);
-  const [stackManagerData, setStackManagerData] = useState(null); // { slot, tasks }
-  const [showTaskScheduler, setShowTaskScheduler] = useState(false); // For adding tasks to existing stack
+  const [stackManagerData, setStackManagerData] = useState(null);
+  const [showTaskScheduler, setShowTaskScheduler] = useState(false);
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
@@ -83,10 +93,10 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     return labels;
   }, [startHour, endHour]);
 
-  const activeDayIndex = viewMode === 'day' && selectedDayIndex !== null 
-    ? selectedDayIndex 
+  const activeDayIndex = viewMode === 'day' && selectedDayIndex !== null
+    ? selectedDayIndex
     : weekDays.findIndex(day => isToday(day));
-  
+
   const selectedDay = activeDayIndex !== -1 ? weekDays[activeDayIndex] : null;
 
   const totalLessons = viewMode === 'day' && selectedDay
@@ -96,13 +106,13 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
   // Detect free periods
   const freePeriodsWithTasks = useMemo(() => {
     const periods = {};
-    
+
     Object.keys(lessonsByDay).forEach(dayNum => {
       const lessons = lessonsByDay[dayNum] || [];
       const duties = dutiesByDay[dayNum] || [];
       const dayIndex = parseInt(dayNum) - 1;
       if (dayIndex < 0 || dayIndex >= weekDays.length) return;
-      
+
       const date = weekDays[dayIndex];
       const occupied = [
         ...lessons.map(l => ({ start: timeToMinutes(l.startTime), end: timeToMinutes(l.endTime) })),
@@ -151,145 +161,60 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
 
   const handleScheduleTask = (taskId, slot) => {
     if (!todos || !onUpdateTodos) return;
-    // Handle both Date objects and ISO strings
     const serializedSlot = {
       ...slot,
       date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
     };
-    // Get the highest stackOrder for this slot
     const tasksInSlot = todos.filter(t => {
       if (!t.scheduledSlot) return false;
-      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
-      const slotDateStr = serializedSlot.date;
-      return tDate === slotDateStr && 
-             t.scheduledSlot.startMinutes === slot.startMinutes &&
-             t.scheduledSlot.endMinutes === slot.endMinutes;
+      const tDate = typeof t.scheduledSlot.date === 'string'
+        ? new Date(t.scheduledSlot.date) : t.scheduledSlot.date;
+      return tDate.toDateString() === (typeof slot.date === 'string'
+        ? new Date(slot.date) : slot.date).toDateString()
+        && t.scheduledSlot.startMinutes === slot.startMinutes;
     });
-    const maxOrder = tasksInSlot.length > 0 
-      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
-      : -1;
-    
-    onUpdateTodos(todos.map(t => 
-      t.id === taskId 
-        ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } 
-        : t
+    const maxOrder = tasksInSlot.reduce((max, t) => Math.max(max, t.stackOrder || 0), -1);
+    onUpdateTodos(todos.map(t =>
+      t.id === taskId ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } : t
     ));
-    
-    // Close the task scheduler
-    setShowTaskScheduler(false);
-    setSelectedFreeSlot(null);
   };
 
   const handleScheduleMultipleTasks = (taskIds, slot) => {
-    if (!todos || !onUpdateTodos || taskIds.length === 0) return;
-    
-    // Handle both Date objects and ISO strings
+    if (!todos || !onUpdateTodos) return;
     const serializedSlot = {
       ...slot,
       date: typeof slot.date === 'string' ? slot.date : slot.date.toISOString()
     };
-    
-    // Get the highest stackOrder for this slot
     const tasksInSlot = todos.filter(t => {
       if (!t.scheduledSlot) return false;
-      const tDate = typeof t.scheduledSlot.date === 'string' ? t.scheduledSlot.date : t.scheduledSlot.date.toISOString();
-      const slotDateStr = serializedSlot.date;
-      return tDate === slotDateStr && 
-             t.scheduledSlot.startMinutes === slot.startMinutes &&
-             t.scheduledSlot.endMinutes === slot.endMinutes;
+      const tDate = typeof t.scheduledSlot.date === 'string'
+        ? new Date(t.scheduledSlot.date) : t.scheduledSlot.date;
+      return tDate.toDateString() === (typeof slot.date === 'string'
+        ? new Date(slot.date) : slot.date).toDateString()
+        && t.scheduledSlot.startMinutes === slot.startMinutes;
     });
-    const maxOrder = tasksInSlot.length > 0 
-      ? Math.max(...tasksInSlot.map(t => t.stackOrder || 0))
-      : -1;
-    
-    // Update all selected tasks at once
+    let currentOrder = tasksInSlot.reduce((max, t) => Math.max(max, t.stackOrder || 0), -1) + 1;
     const taskIdSet = new Set(taskIds);
-    let currentOrder = maxOrder + 1;
-    
     const updatedTodos = todos.map(t => {
       if (taskIdSet.has(t.id)) {
-        const updatedTask = { ...t, scheduledSlot: serializedSlot, stackOrder: currentOrder };
-        currentOrder++;
-        return updatedTask;
+        return { ...t, scheduledSlot: serializedSlot, stackOrder: currentOrder++ };
       }
       return t;
     });
-    
     onUpdateTodos(updatedTodos);
-    
-    // If stack manager is open, refresh it with updated tasks
-    if (stackManagerData) {
-      const slotDateStr = serializedSlot.date;
-      const refreshedTasks = updatedTodos
-        .filter(t => {
-          if (!t.scheduledSlot) return false;
-          const tDate = typeof t.scheduledSlot.date === 'string' 
-            ? t.scheduledSlot.date 
-            : t.scheduledSlot.date.toISOString();
-          return tDate === slotDateStr && 
-                 t.scheduledSlot.startMinutes === slot.startMinutes &&
-                 t.scheduledSlot.endMinutes === slot.endMinutes;
-        })
-        .sort((a, b) => {
-          if (a.completed && !b.completed) return 1;
-          if (!a.completed && b.completed) return -1;
-          return (a.stackOrder || 0) - (b.stackOrder || 0);
-        });
-      
-      setStackManagerData({
-        slot: stackManagerData.slot,
-        tasks: refreshedTasks
-      });
-    }
-    
-    // Close the task scheduler
-    setShowTaskScheduler(false);
-    setSelectedFreeSlot(null);
   };
 
   const handleToggleTaskComplete = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    const updatedTodos = todos.map(t => {
-      if (t.id !== taskId) return t;
-      const newCompleted = !t.completed;
-      // If completing a task, move it to the end of its stack
-      if (newCompleted && t.scheduledSlot) {
-        return { ...t, completed: newCompleted, stackOrder: Date.now() };
-      }
-      return { ...t, completed: newCompleted };
-    });
-    onUpdateTodos(updatedTodos);
-    
-    // If stack manager is open, refresh it with updated tasks
-    if (stackManagerData) {
-      const slot = stackManagerData.slot;
-      const slotDateStr = typeof slot.date === 'string' ? slot.date : slot.date.toISOString();
-      const refreshedTasks = updatedTodos
-        .filter(t => {
-          if (!t.scheduledSlot) return false;
-          const tDate = typeof t.scheduledSlot.date === 'string' 
-            ? t.scheduledSlot.date 
-            : t.scheduledSlot.date.toISOString();
-          return tDate === slotDateStr && 
-                 t.scheduledSlot.startMinutes === slot.startMinutes &&
-                 t.scheduledSlot.endMinutes === slot.endMinutes;
-        })
-        .sort((a, b) => {
-          if (a.completed && !b.completed) return 1;
-          if (!a.completed && b.completed) return -1;
-          return (a.stackOrder || 0) - (b.stackOrder || 0);
-        });
-      
-      setStackManagerData({
-        slot: stackManagerData.slot,
-        tasks: refreshedTasks
-      });
-    }
+    onUpdateTodos(todos.map(t =>
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    ));
   };
 
-  const handleRemoveTaskSchedule = (taskId) => {
+  const handleDeleteTask = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    onUpdateTodos(todos.map(t => t.id === taskId ? { ...t, scheduledSlot: null } : t));
+    onUpdateTodos(todos.map(t =>
+      t.id === taskId ? { ...t, scheduledSlot: null } : t));
   };
 
   const handleOpenStackManager = (slotKey, tasks) => {
@@ -299,7 +224,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
 
   const handleReorderStack = (reorderedTasks) => {
     if (!todos || !onUpdateTodos) return;
-    // Update stack order based on position
     const taskMap = new Map(reorderedTasks.map((task, index) => [task.id, index]));
     const updatedTodos = todos.map(t => {
       if (taskMap.has(t.id)) {
@@ -310,15 +234,21 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
     onUpdateTodos(updatedTodos);
   };
 
+  // Check if a lesson has content in the sequence system
   const hasInstanceData = (lesson) => {
-    const key = lessonInstanceKey(lesson.classId, formatDateISO(lesson.date));
-    const inst = lessonInstances[key];
-    return inst && (inst.title || inst.notes || (inst.links && inst.links.length > 0));
+    const dateStr = formatDateISO(lesson.date);
+    const occNum = getOccurrenceForDate(lesson.classId, dateStr, lesson.startTime, timetableData);
+    if (occNum === null) return false;
+    const content = getLessonForOccurrence(lesson.classId, occNum);
+    return content && (content.title || content.notes || (content.links && content.links.length > 0));
   };
 
+  // Get lesson content from the sequence system
   const getLessonInstanceData = (lesson) => {
-    const key = lessonInstanceKey(lesson.classId, formatDateISO(lesson.date));
-    return lessonInstances[key];
+    const dateStr = formatDateISO(lesson.date);
+    const occNum = getOccurrenceForDate(lesson.classId, dateStr, lesson.startTime, timetableData);
+    if (occNum === null) return null;
+    return getLessonForOccurrence(lesson.classId, occNum);
   };
 
   const daysToRender = viewMode === 'day' && selectedDay ? [selectedDay] : weekDays;
@@ -351,62 +281,71 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
           <div className="flex items-center gap-3">
             {/* View mode toggle */}
             <div className="flex items-center bg-sand rounded-full p-1">
-              <button 
+              <button
                 onClick={() => setViewMode('week')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-smooth ${
-                  viewMode === 'week' ? 'bg-white shadow-sm text-navy' : 'text-navy/50 hover:text-navy'
+                  viewMode === 'week' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy/60'
                 }`}>
                 <CalendarRange size={16} />
                 Week
               </button>
-              <button 
-                onClick={() => setViewMode('day')}
+              <button
+                onClick={() => {
+                  setViewMode('day');
+                  if (selectedDayIndex === null) {
+                    const todayIdx = weekDays.findIndex(d => isToday(d));
+                    setSelectedDayIndex(todayIdx !== -1 ? todayIdx : 0);
+                  }
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-smooth ${
-                  viewMode === 'day' ? 'bg-white shadow-sm text-navy' : 'text-navy/50 hover:text-navy'
+                  viewMode === 'day' ? 'bg-white text-navy shadow-sm' : 'text-navy/40 hover:text-navy/60'
                 }`}>
                 <Calendar size={16} />
                 Day
               </button>
             </div>
 
-            <button onClick={goToToday}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium text-navy/60 bg-sand hover:bg-[#81B29A]/10 hover:text-sage transition-smooth">
-              <CalendarDays size={16} /> Today
-            </button>
-            
-            {viewMode === 'week' && (
-              <div className="flex items-center bg-sand rounded-full p-1">
-                <button onClick={goToPrevWeek} className="p-2 rounded-full hover:bg-white hover:shadow-sm transition-smooth text-navy/50 hover:text-navy">
-                  <ChevronLeft size={18} />
-                </button>
-                <button onClick={goToNextWeek} className="p-2 rounded-full hover:bg-white hover:shadow-sm transition-smooth text-navy/50 hover:text-navy">
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-            )}
+            {/* Navigation */}
+            <div className="flex items-center gap-1">
+              <button onClick={goToPrevWeek}
+                className="p-2.5 rounded-xl text-navy/30 hover:text-navy/60 hover:bg-sand transition-smooth">
+                <ChevronLeft size={18} />
+              </button>
+              <button onClick={goToToday}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth">
+                Today
+              </button>
+              <button onClick={goToNextWeek}
+                className="p-2.5 rounded-xl text-navy/30 hover:text-navy/60 hover:bg-sand transition-smooth">
+                <ChevronRight size={18} />
+              </button>
+            </div>
 
+            {/* Reset */}
             <button onClick={onClearData}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium text-navy/40 hover:text-terracotta hover:bg-[#E07A5F]/5 transition-smooth">
-              <RotateCcw size={15} /> Reset
+              className="p-2.5 rounded-xl text-navy/20 hover:text-terracotta hover:bg-[#E07A5F]/5 transition-smooth"
+              title="Clear timetable data">
+              <RotateCcw size={16} />
             </button>
           </div>
         </header>
 
-        {/* Time Grid */}
+        {/* Calendar grid */}
         <div className="flex-1 overflow-auto">
-          <div className="sticky top-0 z-10 bg-cream/95 backdrop-blur-sm border-b border-slate-100">
-            <div className="flex">
-              <div className="w-16 shrink-0" />
-              <div className={`flex-1 grid gap-2 px-2 py-3 grid-cols-5`}>
-                {weekDays.map((day, i) => {
+          <div className="px-4 pt-3 pb-2">
+            {/* Day headers */}
+            <div className="ml-16 mb-2">
+              <div className={`grid gap-2 ${viewMode === 'day' ? 'grid-cols-1' : 'grid-cols-5'}`}>
+                {(viewMode === 'day' ? (selectedDay ? [selectedDay] : []) : weekDays).map((day, i) => {
                   const today = isToday(day);
-                  const isActive = viewMode === 'day' && i === selectedDayIndex;
+                  const actualIndex = viewMode === 'day' ? activeDayIndex : i;
+                  const isActive = viewMode === 'day' && actualIndex === activeDayIndex;
                   return (
                     <button
                       key={i}
-                      onClick={() => handleDayClick(i)}
-                      className={`text-center py-2 px-2 rounded-xl transition-smooth cursor-pointer hover:bg-[#81B29A]/20 ${
-                        isActive ? 'bg-[#81B29A]/20 ring-2 ring-[#81B29A]/30' : today ? 'bg-[#81B29A]/10' : ''
+                      onClick={() => handleDayClick(viewMode === 'day' ? activeDayIndex : i)}
+                      className={`flex flex-col items-center py-2 rounded-xl transition-smooth
+                      ${isActive ? 'bg-[#81B29A]/20 ring-2 ring-[#81B29A]/30' : today ? 'bg-[#81B29A]/10' : ''
                       }`}>
                       <p className={`text-xs font-semibold uppercase tracking-wider ${
                         isActive ? 'text-sage' : today ? 'text-sage' : 'text-navy/30'
@@ -450,17 +389,16 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                 const lessons = lessonsByDay[dayNum] || [];
                 const duties = dutiesByDay[dayNum] || [];
                 const freePeriods = freePeriodsWithTasks[dayNum] || [];
-                
+
                 const scheduledTasksForDay = (todos || [])
                   .filter(t => {
                     if (!t.scheduledSlot) return false;
-                    const slotDate = typeof t.scheduledSlot.date === 'string' 
-                      ? new Date(t.scheduledSlot.date) 
+                    const slotDate = typeof t.scheduledSlot.date === 'string'
+                      ? new Date(t.scheduledSlot.date)
                       : t.scheduledSlot.date;
                     return slotDate.toDateString() === day.toDateString();
                   })
                   .sort((a, b) => {
-                    // Sort by stack order (completed tasks go to end)
                     if (a.completed && !b.completed) return 1;
                     if (!a.completed && b.completed) return -1;
                     return (a.stackOrder || 0) - (b.stackOrder || 0);
@@ -476,7 +414,6 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
                     freePeriods={freePeriods}
                     scheduledTasks={scheduledTasksForDay}
                     timetableData={timetableData}
-                    lessonInstances={lessonInstances}
                     todos={todos}
                     gridStartMin={gridStartMin}
                     gridHeight={gridHeight}
@@ -500,8 +437,10 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         <LessonPanel
           lesson={selectedLesson}
           timetableData={timetableData}
-          lessonInstances={lessonInstances}
-          onUpdateInstance={onUpdateInstance}
+          lessonSequences={lessonSequences}
+          lessonSchedules={lessonSchedules}
+          onUpdateLesson={onUpdateLesson}
+          onAddLesson={onAddLesson}
           onClose={() => setSelectedLesson(null)}
         />
       ) : showTaskScheduler && selectedFreeSlot && todos && onUpdateTodos ? (
@@ -527,17 +466,12 @@ export default function WeekView({ timetableData, lessonInstances, onUpdateInsta
         <TaskStackManager
           slot={stackManagerData.slot}
           tasks={stackManagerData.tasks}
+          allTodos={todos}
           onReorder={handleReorderStack}
-          onRemoveTask={handleRemoveTaskSchedule}
           onToggleComplete={handleToggleTaskComplete}
-          onAddMore={(slot) => {
-            setSelectedFreeSlot(slot);
-            setShowTaskScheduler(true);
-          }}
-          onClose={() => {
-            setStackManagerData(null);
-            setShowTaskScheduler(false);
-          }}
+          onDeleteTask={handleDeleteTask}
+          onAddMore={() => setShowTaskScheduler(true)}
+          onClose={() => setStackManagerData(null)}
         />
       ) : null}
     </div>

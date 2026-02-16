@@ -15,14 +15,17 @@ import {
   ExternalLink,
   StickyNote,
   ChevronDown,
+  GripVertical,
+  ArrowDownToLine,
 } from 'lucide-react';
-import { getClassColor, generateFutureLessons, lessonInstanceKey } from '../utils/timetable';
+import { getClassColor, generateTimetableOccurrences } from '../utils/timetable';
 import { formatTime, formatDateISO, MONTH_NAMES_SHORT, DAY_NAMES_SHORT } from '../utils/dateHelpers';
+import { getClassSchedule } from '../utils/storage';
 
 // ===== ClassView =====
-// Left panel: class list. Right panel: class info + "See All" future lessons.
-// "See All" shows an inline scrollable list of every upcoming lesson with
-// inline-editable title, notes, and links — no modals needed.
+// Left panel: class list. Right panel: class info + lesson sequence management.
+// "See All" now shows the lesson SEQUENCE with drag-drop reordering,
+// and each lesson shows which date it's scheduled for via occurrence mapping.
 
 // --- Helpers ---
 
@@ -40,7 +43,7 @@ function getClassRooms(classId, timetableData) {
   return [...rooms];
 }
 
-function getClassSchedule(classId, timetableData) {
+function getClassRecurringSchedule(classId, timetableData) {
   if (!timetableData?.recurringLessons) return [];
   const dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const lessons = timetableData.recurringLessons
@@ -64,32 +67,41 @@ function getClassSchedule(classId, timetableData) {
   return merged.map((m) => ({ ...m, dayName: dayNames[m.dayOfWeek] || '' }));
 }
 
-/** Format date as "Mon 9 Feb" */
 function formatShortDate(date) {
   return `${DAY_NAMES_SHORT[date.getDay()]} ${date.getDate()} ${MONTH_NAMES_SHORT[date.getMonth()]}`;
 }
 
 
-// --- Inline Lesson Row (for the "See All" list) ---
+// --- Inline Lesson Row (for editing a lesson in the sequence) ---
 
-function LessonRow({ slot, instance, accent, onUpdateInstance }) {
-  const [title, setTitle] = useState(instance.title || '');
-  const [notes, setNotes] = useState(instance.notes || '');
-  const [links, setLinks] = useState(instance.links || []);
+function LessonSequenceRow({
+  lesson,
+  index,
+  scheduledDate,
+  accent,
+  onUpdate,
+  onDelete,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  isDragging,
+}) {
+  const [title, setTitle] = useState(lesson.title || '');
+  const [notes, setNotes] = useState(lesson.notes || '');
+  const [links, setLinks] = useState(lesson.links || []);
   const [showAddLink, setShowAddLink] = useState(false);
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
   const [expanded, setExpanded] = useState(false);
 
-  // Sync from parent when instance changes externally
   React.useEffect(() => {
-    setTitle(instance.title || '');
-    setNotes(instance.notes || '');
-    setLinks(instance.links || []);
-  }, [instance]);
+    setTitle(lesson.title || '');
+    setNotes(lesson.notes || '');
+    setLinks(lesson.links || []);
+  }, [lesson]);
 
   const save = (updates) => {
-    onUpdateInstance(slot.key, { ...instance, ...updates });
+    onUpdate(lesson.id, { ...updates });
   };
 
   const addLink = () => {
@@ -102,8 +114,8 @@ function LessonRow({ slot, instance, accent, onUpdateInstance }) {
     setShowAddLink(false);
   };
 
-  const removeLink = (index) => {
-    const updated = links.filter((_, i) => i !== index);
+  const removeLink = (i) => {
+    const updated = links.filter((_, idx) => idx !== i);
     setLinks(updated);
     save({ links: updated });
   };
@@ -111,110 +123,97 @@ function LessonRow({ slot, instance, accent, onUpdateInstance }) {
   const hasContent = title || notes || links.length > 0;
 
   return (
-    <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden transition-smooth hover:border-slate-200">
-      {/* Collapsed row — always visible */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {/* Date pill */}
-        <div className="shrink-0 w-24">
-          <p className="text-sm font-medium text-navy">{formatShortDate(slot.date)}</p>
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDrop={(e) => onDrop(e, index)}
+      className={`border border-slate-100 rounded-2xl bg-white overflow-hidden transition-smooth hover:border-slate-200
+        ${isDragging ? 'opacity-40 scale-95' : ''}`}
+    >
+      {/* Collapsed row */}
+      <div className="flex items-center gap-2 px-3 py-3 cursor-pointer select-none">
+        {/* Drag handle */}
+        <div className="shrink-0 cursor-grab active:cursor-grabbing text-navy/15 hover:text-navy/30">
+          <GripVertical size={16} />
         </div>
 
-        {/* Time */}
-        <span className="text-xs text-navy/40 font-serif tabular-nums shrink-0 w-24">
-          {formatTime(slot.startTime)}–{formatTime(slot.endTime)}
-        </span>
-
-        {/* Period badge */}
+        {/* Lesson number */}
         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
           style={{ backgroundColor: `${accent}18`, color: accent }}>
-          P{slot.period}
+          #{index + 1}
         </span>
 
-        {/* Title preview or placeholder */}
-        <span className={`flex-1 text-sm truncate ${title ? 'text-navy' : 'text-navy/20 italic'}`}>
-          {title || 'No title'}
+        {/* Title or placeholder */}
+        <span
+          className={`flex-1 text-sm truncate ${title ? 'text-navy font-medium' : 'text-navy/25 italic'}`}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {title || 'Untitled lesson'}
         </span>
 
-        {/* Indicators */}
+        {/* Scheduled date */}
+        {scheduledDate && (
+          <span className="text-[11px] text-navy/30 shrink-0 tabular-nums">
+            {formatShortDate(scheduledDate)}
+          </span>
+        )}
+
+        {/* Content indicator */}
         {hasContent && !expanded && (
           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accent }} />
         )}
 
-        <ChevronDown size={16}
-          className={`text-navy/20 transition-smooth shrink-0 ${expanded ? 'rotate-180' : ''}`} />
+        {/* Expand toggle */}
+        <button onClick={() => setExpanded(!expanded)} className="shrink-0 p-1 text-navy/20 hover:text-navy/40">
+          <ChevronDown size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
       </div>
 
-      {/* Expanded editing area */}
+      {/* Expanded editor */}
       {expanded && (
-        <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-50">
-          {/* Room info */}
-          {slot.room && (
-            <div className="flex items-center gap-1.5 text-xs text-navy/30">
-              <MapPin size={12} /> {slot.room}
-            </div>
-          )}
-
-          {/* Title */}
-          <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Lesson Title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => save({ title })}
-              placeholder="e.g. Forces & Newton's Laws"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-navy text-sm
-                         placeholder:text-navy/20 focus:outline-none focus:border-sage
-                         focus:ring-2 focus:ring-sage/20 transition-smooth"
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => save({ notes })}
-              rows={2}
-              placeholder="What to cover…"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-navy text-sm
-                         leading-relaxed placeholder:text-navy/20 resize-none
-                         focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20 transition-smooth"
-            />
-          </div>
+        <div className="px-4 pb-4 pt-1 border-t border-slate-50 space-y-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => save({ title })}
+            placeholder="Lesson title…"
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-navy
+                       placeholder:text-navy/20 focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage/20"
+          />
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => save({ notes })}
+            rows={3}
+            placeholder="Notes…"
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-navy
+                       leading-relaxed placeholder:text-navy/20 resize-none
+                       focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage/20"
+          />
 
           {/* Links */}
           <div>
-            <label className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider block mb-1">
-              Links &amp; Resources
-            </label>
             {links.length > 0 && (
               <div className="space-y-1.5 mb-2">
                 {links.map((link, i) => (
                   <div key={i} className="flex items-center gap-2 bg-sand/50 rounded-lg px-2.5 py-1.5 group">
-                    <Link2 size={12} className="text-navy/25 shrink-0" />
+                    <Link2 size={12} className="text-navy/30 shrink-0" />
                     <a href={link.url} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-sage hover:underline truncate flex-1">
                       {link.label || link.url}
                     </a>
-                    <ExternalLink size={10} className="text-navy/15 shrink-0" />
+                    <ExternalLink size={10} className="text-navy/20 shrink-0" />
                     <button onClick={() => removeLink(i)}
-                      className="p-0.5 rounded text-navy/10 hover:text-terracotta
-                                 opacity-0 group-hover:opacity-100 transition-smooth shrink-0">
-                      <Trash2 size={12} />
+                      className="p-0.5 rounded text-navy/15 hover:text-terracotta opacity-0 group-hover:opacity-100 transition-smooth shrink-0">
+                      <Trash2 size={11} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
+
             {showAddLink ? (
               <div className="space-y-1.5 p-2.5 rounded-xl border border-slate-200">
                 <input type="url" value={newLinkUrl} onChange={(e) => setNewLinkUrl(e.target.value)}
@@ -244,6 +243,17 @@ function LessonRow({ slot, instance, accent, onUpdateInstance }) {
               </button>
             )}
           </div>
+
+          {/* Delete button */}
+          <div className="flex justify-end pt-1">
+            <button
+              onClick={() => onDelete(lesson.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium
+                         text-terracotta/50 hover:text-terracotta hover:bg-terracotta/5 transition-smooth"
+            >
+              <Trash2 size={12} /> Remove lesson
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -253,20 +263,51 @@ function LessonRow({ slot, instance, accent, onUpdateInstance }) {
 
 // --- Main Component ---
 
-export default function ClassView({ timetableData, lessonInstances, onUpdateClass, onUpdateInstance }) {
+export default function ClassView({
+  timetableData,
+  lessonSequences,
+  lessonSchedules,
+  onUpdateClass,
+  onUpdateLesson,
+  onAddLesson,
+  onDeleteLesson,
+  onReorderSequence,
+  onUpdateSchedule,
+}) {
   const [selectedClassId, setSelectedClassId] = useState(null);
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [showAllLessons, setShowAllLessons] = useState(false);
+  const [dragIndex, setDragIndex] = useState(null);
 
   const classes = timetableData?.classes || [];
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
-  // Generate future lessons for the selected class
-  const futureLessons = useMemo(() => {
+  // Get the lesson sequence for the selected class
+  const classSequence = useMemo(() => {
     if (!selectedClass) return [];
-    return generateFutureLessons(selectedClass.id, timetableData, 26);
+    const seq = lessonSequences[selectedClass.id] || [];
+    return [...seq].sort((a, b) => a.order - b.order);
+  }, [selectedClass, lessonSequences]);
+
+  // Get timetable occurrences for mapping sequences to dates
+  const occurrences = useMemo(() => {
+    if (!selectedClass) return [];
+    return generateTimetableOccurrences(selectedClass.id, timetableData, 26);
   }, [selectedClass, timetableData]);
+
+  // Get the schedule (startIndex) for the selected class
+  const classScheduleData = useMemo(() => {
+    if (!selectedClass) return { startIndex: 0 };
+    return getClassSchedule(selectedClass.id);
+  }, [selectedClass, lessonSchedules]);
+
+  // Map each lesson in the sequence to its scheduled date
+  const getScheduledDate = (lessonOrder) => {
+    const occurrenceNum = lessonOrder - classScheduleData.startIndex;
+    if (occurrenceNum < 0 || occurrenceNum >= occurrences.length) return null;
+    return occurrences[occurrenceNum]?.date || null;
+  };
 
   const startEdit = (field, currentValue) => {
     setEditingField(field);
@@ -285,7 +326,6 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
 
   const cancelEdit = () => { setEditingField(null); setEditValue(''); };
 
-  // Reset view state when selecting a different class
   const selectClass = (id) => {
     if (selectedClassId === id) {
       setSelectedClassId(null);
@@ -294,6 +334,56 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
       setShowAllLessons(false);
       setEditingField(null);
     }
+  };
+
+  // Handle lesson update within the sequence
+  const handleUpdateLesson = (lessonId, updates) => {
+    if (!selectedClass) return;
+    onUpdateLesson(selectedClass.id, lessonId, updates);
+  };
+
+  // Handle adding a new lesson to the sequence
+  const handleAddLesson = () => {
+    if (!selectedClass) return;
+    onAddLesson(selectedClass.id, {});
+  };
+
+  // Handle deleting a lesson from the sequence
+  const handleDeleteLesson = (lessonId) => {
+    if (!selectedClass) return;
+    onDeleteLesson(selectedClass.id, lessonId);
+  };
+
+  // Drag and drop reordering
+  const handleDragStart = (e, index) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, dropIndex) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIndex || !selectedClass) {
+      setDragIndex(null);
+      return;
+    }
+    // Reorder the sequence
+    const ids = classSequence.map(l => l.id);
+    const [movedId] = ids.splice(dragIndex, 1);
+    ids.splice(dropIndex, 0, movedId);
+    onReorderSequence(selectedClass.id, ids);
+    setDragIndex(null);
+  };
+
+  // Push back: increment startIndex so all lessons shift one occurrence later
+  const handlePushBack = () => {
+    if (!selectedClass) return;
+    const current = getClassSchedule(selectedClass.id);
+    onUpdateSchedule(selectedClass.id, { startIndex: current.startIndex + 1 });
   };
 
   return (
@@ -370,14 +460,14 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
       </div>
 
       {/* ===== Class Detail (right panel) ===== */}
-      {selectedClass && (
+      {selectedClass ? (
         <div className="flex-1 flex flex-col min-h-0 overflow-auto">
           <div className="max-w-2xl w-full mx-auto p-8">
             {/* Class header */}
             <div className="flex items-center gap-4 mb-8">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: `${getClassColor(selectedClass.id, classes)}20` }}>
-                <BookOpen size={22} style={{ color: getClassColor(selectedClass.id, classes) }} />
+                style={{ backgroundColor: `${getClassColor(selectedClass.id, classes)}18` }}>
+                <BookOpen size={24} style={{ color: getClassColor(selectedClass.id, classes) }} />
               </div>
               <div>
                 <h2 className="font-serif text-2xl font-bold text-navy">{selectedClass.name}</h2>
@@ -388,59 +478,42 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
               </div>
             </div>
 
-            {/* Editable fields */}
-            <div className="space-y-4 mb-10">
+            {/* Class Size & Notes */}
+            <div className="space-y-6 mb-8">
               {/* Class Size */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Users size={18} className="text-navy/30" />
-                    <div>
-                      <p className="text-xs font-semibold text-navy/40 uppercase tracking-wider">Class Size</p>
-                      {editingField === 'classSize' ? (
-                        <div className="flex items-center gap-2 mt-1">
-                          <input type="number" min="0" max="99" value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveEdit(selectedClass.id, 'classSize');
-                              if (e.key === 'Escape') cancelEdit();
-                            }}
-                            autoFocus
-                            className="w-20 px-3 py-1.5 rounded-xl border border-slate-200 text-navy font-serif font-bold text-lg
-                                       focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20" />
-                          <button onClick={() => saveEdit(selectedClass.id, 'classSize')}
-                            className="p-1.5 rounded-full bg-sage/10 text-sage hover:bg-sage/20 transition-smooth">
-                            <Save size={14} />
-                          </button>
-                          <button onClick={cancelEdit}
-                            className="p-1.5 rounded-full bg-slate-100 text-navy/30 hover:bg-slate-200 transition-smooth">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="font-serif font-bold text-navy text-lg mt-0.5">
-                          {selectedClass.classSize ?? <span className="text-navy/20 text-sm font-sans font-normal italic">Not set</span>}
-                          {selectedClass.classSize && <span className="text-navy/30 text-sm font-sans font-normal ml-1">students</span>}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {editingField !== 'classSize' && (
-                    <button onClick={() => startEdit('classSize', selectedClass.classSize)}
-                      className="p-2 rounded-xl text-navy/20 hover:text-navy/50 hover:bg-sand transition-smooth">
-                      <Pencil size={15} />
-                    </button>
-                  )}
+              <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-100 px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <Users size={18} className="text-navy/30" />
+                  <span className="text-sm font-medium text-navy">Class Size</span>
                 </div>
+                {editingField === 'classSize' ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(selectedClass.id, 'classSize'); if (e.key === 'Escape') cancelEdit(); }}
+                      autoFocus min={0} max={40}
+                      className="w-20 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-navy text-center
+                                 focus:outline-none focus:border-sage" />
+                    <button onClick={() => saveEdit(selectedClass.id, 'classSize')}
+                      className="p-1.5 rounded-lg text-sage hover:bg-sage/10"><Save size={14} /></button>
+                    <button onClick={cancelEdit}
+                      className="p-1.5 rounded-lg text-navy/30 hover:bg-sand"><X size={14} /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => startEdit('classSize', selectedClass.classSize)}
+                    className="flex items-center gap-2 text-sm text-navy/60 hover:text-navy transition-smooth">
+                    {selectedClass.classSize || <span className="text-navy/20 italic">Not set</span>}
+                    <Pencil size={13} className="text-navy/20" />
+                  </button>
+                )}
               </div>
 
               {/* Class Notes */}
               <div className="bg-white rounded-2xl border border-slate-100 p-5">
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <StickyNote size={15} className="text-navy/30" />
-                      <p className="text-xs font-semibold text-navy/40 uppercase tracking-wider">Class Notes</p>
+                      <StickyNote size={16} className="text-navy/30" />
+                      <span className="text-sm font-medium text-navy">Class Notes</span>
                     </div>
                     {editingField === 'notes' ? (
                       <div>
@@ -478,48 +551,79 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
               </div>
             </div>
 
-            {/* Fortnightly Schedule + See All toggle */}
+            {/* Fortnightly Schedule + Lesson Sequence toggle */}
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-serif font-bold text-navy text-lg">
-                  {showAllLessons ? 'All Upcoming Lessons' : 'Fortnightly Schedule'}
+                  {showAllLessons ? 'Lesson Sequence' : 'Fortnightly Schedule'}
                 </h3>
-                <button
-                  onClick={() => setShowAllLessons(!showAllLessons)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold
-                             bg-[#E07A5F] text-white shadow-sm shadow-[#E07A5F]/20
-                             hover:shadow-md hover:shadow-[#E07A5F]/30 transition-smooth"
-                >
-                  <CalendarRange size={14} />
-                  {showAllLessons ? 'Show Schedule' : 'See All'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {showAllLessons && classSequence.length > 0 && (
+                    <button
+                      onClick={handlePushBack}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium
+                                 text-navy/40 hover:text-navy/60 hover:bg-sand transition-smooth"
+                      title="Push all lessons back by one timetable slot"
+                    >
+                      <ArrowDownToLine size={14} />
+                      Push Back
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAllLessons(!showAllLessons)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold
+                               bg-[#E07A5F] text-white shadow-sm shadow-[#E07A5F]/20
+                               hover:shadow-md hover:shadow-[#E07A5F]/30 transition-smooth"
+                  >
+                    <CalendarRange size={14} />
+                    {showAllLessons ? 'Show Schedule' : 'Lesson Sequence'}
+                  </button>
+                </div>
               </div>
 
               {showAllLessons ? (
-                /* ===== All Future Lessons — inline editable ===== */
+                /* ===== Lesson Sequence — drag-drop reorderable ===== */
                 <div className="space-y-2">
-                  {futureLessons.length === 0 ? (
-                    <p className="text-sm text-navy/30 italic py-4 text-center">No upcoming lessons found</p>
+                  {classSequence.length === 0 ? (
+                    <p className="text-sm text-navy/30 italic py-4 text-center">
+                      No lessons planned yet. Add your first lesson below.
+                    </p>
                   ) : (
-                    futureLessons.map((slot) => {
-                      const inst = lessonInstances[slot.key] || { title: '', notes: '', links: [] };
-                      return (
-                        <LessonRow
-                          key={slot.key}
-                          slot={slot}
-                          instance={inst}
-                          accent={getClassColor(selectedClass.id, classes)}
-                          onUpdateInstance={onUpdateInstance}
-                        />
-                      );
-                    })
+                    classSequence.map((lesson, i) => (
+                      <LessonSequenceRow
+                        key={lesson.id}
+                        lesson={lesson}
+                        index={i}
+                        scheduledDate={getScheduledDate(lesson.order)}
+                        accent={getClassColor(selectedClass.id, classes)}
+                        onUpdate={handleUpdateLesson}
+                        onDelete={handleDeleteLesson}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        isDragging={dragIndex === i}
+                      />
+                    ))
                   )}
+
+                  {/* Add lesson button */}
+                  <button
+                    onClick={handleAddLesson}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl
+                               border-2 border-dashed border-slate-200
+                               text-sm font-medium text-navy/30
+                               hover:text-sage hover:border-sage/30 hover:bg-[#81B29A]/5
+                               transition-smooth"
+                  >
+                    <Plus size={16} />
+                    Add Lesson
+                  </button>
                 </div>
               ) : (
                 /* ===== Fortnightly pattern ===== */
                 <>
                   {[1, 2].map((weekNum) => {
-                    const schedule = getClassSchedule(selectedClass.id, timetableData)
+                    const schedule = getClassRecurringSchedule(selectedClass.id, timetableData)
                       .filter((s) => s.weekNumber === weekNum);
                     if (schedule.length === 0) return null;
                     return (
@@ -553,7 +657,7 @@ export default function ClassView({ timetableData, lessonInstances, onUpdateClas
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
