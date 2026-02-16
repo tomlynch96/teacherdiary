@@ -13,19 +13,28 @@ import {
    * Get the lesson content for a specific date
    * Returns the lesson object from the sequence if scheduled, otherwise null
    */
-  export function getLessonForDate(classId, date) {
-    // Handle both Date objects and ISO strings
-    const dateStr = typeof date === 'string' 
-      ? date.split('T')[0] // If already a string, take just the date part
-      : formatDateISO(date); // If Date object, format it
+  export function getLessonForDate(classId, date, lessonSequences, lessonSchedules) {
+    if (!classId || !date) return null;
     
-    const scheduleEntry = getScheduledLessonForDate(classId, dateStr);
+    // Normalize date to ISO string
+    const dateStr = typeof date === 'string' ? date.split('T')[0] : formatDateISO(date);
     
-    if (!scheduleEntry) return null;
+    // Get the schedule for this class
+    const classSchedule = lessonSchedules?.[classId];
+    if (!classSchedule) return null;
     
-    const sequence = getClassSequence(classId);
-    return sequence[scheduleEntry.sequenceIndex] || null;
+    // Get the sequence index for this date
+    const sequenceIndex = classSchedule[dateStr];
+    if (sequenceIndex === undefined) return null;
+    
+    // Get the sequences for this class
+    const classSequences = lessonSequences?.[classId];
+    if (!classSequences || !Array.isArray(classSequences)) return null;
+    
+    // Return the sequence at this index
+    return classSequences[sequenceIndex] || null;
   }
+  
   
   /**
    * Get all scheduled lessons for a class with their dates
@@ -136,10 +145,15 @@ import {
   /**
    * Get the sequence index for a date (if scheduled)
    */
-  export function getSequenceIndexForDate(classId, date) {
-    const dateStr = typeof date === 'string'
-      ? date.split('T')[0]
-      : formatDateISO(date);
-    const entry = getScheduledLessonForDate(classId, dateStr);
-    return entry ? entry.sequenceIndex : null;
+  export function getSequenceIndexForDate(classId, date, lessonSchedules) {
+    if (!classId || !date) return null;
+    
+    const dateStr = typeof date === 'string' ? date.split('T')[0] : formatDateISO(date);
+    
+    // Get the schedule for this class
+    const classSchedule = lessonSchedules?.[classId];
+    if (!classSchedule) return null;
+    
+    // Return the sequence index for this date
+    return classSchedule[dateStr] ?? null;
   }

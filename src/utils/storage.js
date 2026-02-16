@@ -168,9 +168,20 @@ export function unscheduleLesson(classId, date) {
 }
 
 export function getScheduledLessonForDate(classId, date) {
-  const schedule = getClassSchedule(classId);
-  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
-  return schedule.find(entry => entry.date === dateStr);
+  const schedules = getLessonSchedules();
+  if (!schedules) return null;
+  
+  const dateStr = typeof date === 'string' ? date.split('T')[0] : date;
+  
+  // Get the schedule for this class
+  const classSchedule = schedules[classId];
+  if (!classSchedule || typeof classSchedule !== 'object') return null;
+  
+  // Get the sequence index for this date
+  const sequenceIndex = classSchedule[dateStr];
+  if (sequenceIndex === undefined) return null;
+  
+  return { date: dateStr, sequenceIndex };
 }
 
 export function pushBackSchedule(classId, fromDate, shiftAmount = 1) {
