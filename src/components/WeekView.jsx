@@ -30,7 +30,7 @@ import {
   getTimeRange,
   getOccurrenceForDate,
 } from '../utils/timetable';
-import { getLessonForOccurrence, getHolidayWeekMondays, getSettings } from '../utils/storage';
+import { getLessonForOccurrence, getHolidayWeekMondays, getHolidayDates, getHolidayNameForDate, getSettings } from '../utils/storage';
 
 const PX_PER_MINUTE = 1.8;
 
@@ -58,9 +58,6 @@ export default function WeekView({
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
-  const weekNum = isTwoWeek && anchorDate
-    ? getWeekNumber(currentDate, anchorDate)
-    : null;
 
   // Detect if current week is a holiday week
   const holidayInfo = useMemo(() => {
@@ -77,6 +74,13 @@ export default function WeekView({
     }
     return { name: 'School Holiday' };
   }, [monday, settings]);
+
+  // Week number with holiday-aware rotation pausing
+  const weekNum = useMemo(() => {
+    if (!isTwoWeek || !anchorDate) return null;
+    const holidayMondays = getHolidayWeekMondays();
+    return getWeekNumber(currentDate, anchorDate, holidayMondays);
+  }, [currentDate, isTwoWeek, anchorDate, settings]);
 
   const rawLessonsByDay = useMemo(
     () => getLessonsForWeek(timetableData, weekDays),
@@ -491,6 +495,29 @@ export default function WeekView({
                 /* Normal day columns */
                 daysToRender.map((day, i) => {
                 const dayNum = day.getDay() === 0 ? 7 : day.getDay();
+                const dayISO = formatDateISO(day);
+
+                // Check if this individual day is a holiday
+                const dayHolidayName = getHolidayNameForDate(dayISO);
+                if (dayHolidayName) {
+                  return (
+                    <div
+                      key={i}
+                      className="relative rounded-2xl border-2 border-dashed border-terracotta/20 bg-terracotta/[0.03]"
+                      style={{ height: gridHeight }}
+                    >
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+                        <CalendarOff size={24} className="text-terracotta/30" />
+                        <div className="text-center">
+                          <p className="font-serif text-xs font-bold text-terracotta/50">
+                            {dayHolidayName}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const lessons = lessonsByDay[dayNum] || [];
                 const duties = dutiesByDay[dayNum] || [];
                 const freePeriods = freePeriodsWithTasks[dayNum] || [];

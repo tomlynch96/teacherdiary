@@ -6,7 +6,7 @@ import {
   timeToMinutes,
   formatDateISO,
 } from './dateHelpers';
-import { getHolidayWeekMondays } from './storage';
+import { getHolidayWeekMondays, getHolidayDates } from './storage';
 
 // ---- 12-colour palette for per-class colouring ----
 const CLASS_COLOURS = [
@@ -32,8 +32,9 @@ export function getLessonsForWeek(timetableData, weekDays) {
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const holidayMondays = isTwoWeek ? getHolidayWeekMondays() : null;
   const weekNum = isTwoWeek && anchorDate
-    ? getWeekNumber(weekDays[0], anchorDate)
+    ? getWeekNumber(weekDays[0], anchorDate, holidayMondays)
     : null;
 
   const result = {};
@@ -69,8 +70,9 @@ export function getDutiesForWeek(timetableData, weekDays) {
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const holidayMondays = isTwoWeek ? getHolidayWeekMondays() : null;
   const weekNum = isTwoWeek && anchorDate
-    ? getWeekNumber(weekDays[0], anchorDate)
+    ? getWeekNumber(weekDays[0], anchorDate, holidayMondays)
     : null;
 
   const result = {};
@@ -222,8 +224,11 @@ export function generateTimetableOccurrences(classId, timetableData, weeksAhead 
   );
   if (classLessons.length === 0) return [];
 
-  // Get holiday week Mondays for skipping
+  // Get holiday week Mondays for skipping full weeks
   const holidayMondays = getHolidayWeekMondays();
+
+  // Get individual holiday dates for skipping partial days (e.g. bank holidays)
+  const holidayDates = getHolidayDates();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -243,7 +248,7 @@ export function generateTimetableOccurrences(classId, timetableData, weeksAhead 
     }
 
     const weekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(weekStart, anchorDate)
+      ? getWeekNumber(weekStart, anchorDate, holidayMondays)
       : null;
 
     for (let d = 0; d < 5; d++) {
@@ -251,6 +256,10 @@ export function generateTimetableOccurrences(classId, timetableData, weeksAhead 
       date.setDate(weekStart.getDate() + d);
 
       if (date < today) continue;
+
+      // Skip individual holiday dates (bank holidays, partial weeks)
+      const dateISO = formatDateISO(date);
+      if (holidayDates.has(dateISO)) continue;
 
       const dayOfWeek = d + 1;
 

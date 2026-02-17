@@ -100,15 +100,38 @@ export default function SettingsView({ settings, onUpdateSettings, timetableData
     if (!holidayName.trim() || !holidayStartDate || !holidayEndDate) return;
     if (holidayEndDate < holidayStartDate) return;
 
-    // Calculate all the Monday ISO dates that fall within this holiday range
-    const holidayWeekMondays = [];
-    const start = getMonday(new Date(holidayStartDate + 'T00:00:00'));
-    const end = new Date(holidayEndDate + 'T00:00:00');
-    const current = new Date(start);
-    while (current <= end) {
-      holidayWeekMondays.push(formatDateISO(current));
-      current.setDate(current.getDate() + 7);
+    const startD = new Date(holidayStartDate + 'T00:00:00');
+    const endD = new Date(holidayEndDate + 'T00:00:00');
+
+    // Collect all individual holiday dates
+    const allDates = [];
+    const cur = new Date(startD);
+    while (cur <= endD) {
+      const dow = cur.getDay();
+      // Only count weekdays (Mon=1 to Fri=5)
+      if (dow >= 1 && dow <= 5) {
+        allDates.push(formatDateISO(cur));
+      }
+      cur.setDate(cur.getDate() + 1);
     }
+
+    // Group dates by their week Monday, then only mark weeks where all 5 days are covered
+    const datesByWeek = {};
+    allDates.forEach(dateISO => {
+      const d = new Date(dateISO + 'T00:00:00');
+      const mon = getMonday(d);
+      const monISO = formatDateISO(mon);
+      if (!datesByWeek[monISO]) datesByWeek[monISO] = [];
+      datesByWeek[monISO].push(dateISO);
+    });
+
+    const holidayWeekMondays = [];
+    Object.entries(datesByWeek).forEach(([monISO, dates]) => {
+      if (dates.length >= 5) {
+        // Full week — all 5 weekdays covered
+        holidayWeekMondays.push(monISO);
+      }
+    });
 
     const newHoliday = {
       id: Date.now().toString(),
@@ -116,6 +139,7 @@ export default function SettingsView({ settings, onUpdateSettings, timetableData
       startDate: holidayStartDate,
       endDate: holidayEndDate,
       weekMondays: holidayWeekMondays,
+      holidayDates: allDates, // individual dates for partial-week display
     };
 
     onUpdateSettings({
@@ -306,26 +330,50 @@ export default function SettingsView({ settings, onUpdateSettings, timetableData
 
                 {holidayStartDate && holidayEndDate && holidayEndDate >= holidayStartDate && (
                   <div className="text-xs text-navy/40 bg-white rounded-lg px-3 py-2 border border-slate-100">
-                    This covers{' '}
-                    <span className="font-medium text-terracotta">
-                      {(() => {
-                        const start = getMonday(new Date(holidayStartDate + 'T00:00:00'));
-                        const end = new Date(holidayEndDate + 'T00:00:00');
-                        let count = 0;
-                        const cur = new Date(start);
-                        while (cur <= end) { count++; cur.setDate(cur.getDate() + 7); }
-                        return count;
-                      })()}{' '}
-                      week{(() => {
-                        const start = getMonday(new Date(holidayStartDate + 'T00:00:00'));
-                        const end = new Date(holidayEndDate + 'T00:00:00');
-                        let count = 0;
-                        const cur = new Date(start);
-                        while (cur <= end) { count++; cur.setDate(cur.getDate() + 7); }
-                        return count !== 1 ? 's' : '';
-                      })()}
-                    </span>
-                    {' '}of lessons will be pushed forward.
+                    {(() => {
+                      const startD = new Date(holidayStartDate + 'T00:00:00');
+                      const endD = new Date(holidayEndDate + 'T00:00:00');
+                      // Count weekdays
+                      let weekdays = 0;
+                      const datesByWeek = {};
+                      const cur = new Date(startD);
+                      while (cur <= endD) {
+                        const dow = cur.getDay();
+                        if (dow >= 1 && dow <= 5) {
+                          weekdays++;
+                          const mon = getMonday(cur);
+                          const monISO = formatDateISO(mon);
+                          datesByWeek[monISO] = (datesByWeek[monISO] || 0) + 1;
+                        }
+                        cur.setDate(cur.getDate() + 1);
+                      }
+                      const fullWeeks = Object.values(datesByWeek).filter(c => c >= 5).length;
+                      const partialDays = weekdays - (fullWeeks * 5);
+
+                      if (fullWeeks > 0 && partialDays > 0) {
+                        return (
+                          <>
+                            <span className="font-medium text-terracotta">{fullWeeks} full week{fullWeeks !== 1 ? 's' : ''}</span>
+                            {' '}of lessons will be pushed forward, plus{' '}
+                            <span className="font-medium text-terracotta">{partialDays} day{partialDays !== 1 ? 's' : ''}</span> off.
+                          </>
+                        );
+                      } else if (fullWeeks > 0) {
+                        return (
+                          <>
+                            <span className="font-medium text-terracotta">{fullWeeks} full week{fullWeeks !== 1 ? 's' : ''}</span>
+                            {' '}of lessons will be pushed forward.
+                          </>
+                        );
+                      } else {
+                        return (
+                          <>
+                            <span className="font-medium text-terracotta">{partialDays} day{partialDays !== 1 ? 's' : ''}</span>
+                            {' '}off (partial week — timetable rotation unaffected).
+                          </>
+                        );
+                      }
+                    })()}
                   </div>
                 )}
 
@@ -359,7 +407,9 @@ export default function SettingsView({ settings, onUpdateSettings, timetableData
             ) : (
               <div className="space-y-3">
                 {holidays.map((holiday) => {
-                  const weeks = holiday.weekMondays || [];
+                  const fullWeeks = (holiday.weekMondays || []).length;
+                  const totalDays = (holiday.holidayDates || []).length;
+                  const partialDays = totalDays - (fullWeeks * 5);
                   return (
                     <div key={holiday.id} className="border border-slate-100 rounded-xl overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 bg-white">
@@ -372,7 +422,10 @@ export default function SettingsView({ settings, onUpdateSettings, timetableData
                               {' – '}
                               {new Date(holiday.endDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                               <span className="ml-2 text-terracotta font-medium">
-                                ({weeks.length} week{weeks.length !== 1 ? 's' : ''})
+                                ({fullWeeks > 0
+                                  ? `${fullWeeks} full week${fullWeeks !== 1 ? 's' : ''}${partialDays > 0 ? ` + ${partialDays} day${partialDays !== 1 ? 's' : ''}` : ''}`
+                                  : `${totalDays} day${totalDays !== 1 ? 's' : ''}`
+                                })
                               </span>
                             </p>
                           </div>

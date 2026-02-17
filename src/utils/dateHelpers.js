@@ -127,11 +127,18 @@ export function getDayOfWeek(date) {
  * We count the number of whole weeks between the anchor's Monday
  * and the target's Monday. Even offsets = Week 1, odd = Week 2.
  *
+ * If holidayWeekMondays (a Set of ISO date strings) is provided,
+ * any full holiday weeks between anchor and target are subtracted
+ * from the count so the two-week rotation "pauses" over holidays.
+ * This means if you're on Week 1 before a 1-week holiday, you come
+ * back on Week 2 (not Week 1 again).
+ *
  * @param {Date} date - the date to check
  * @param {string|Date} anchorDate - a date known to be in Week 1 (e.g. exportDate)
+ * @param {Set<string>} [holidayWeekMondays] - optional Set of Monday ISO strings that are holiday weeks
  * @returns {number} 1 or 2
  */
-export function getWeekNumber(date, anchorDate) {
+export function getWeekNumber(date, anchorDate, holidayWeekMondays = null) {
   const anchor = typeof anchorDate === 'string' ? new Date(anchorDate) : new Date(anchorDate);
   const anchorMon = getMonday(anchor);
   const targetMon = getMonday(date);
@@ -139,9 +146,30 @@ export function getWeekNumber(date, anchorDate) {
   const diffMs = targetMon.getTime() - anchorMon.getTime();
   const diffWeeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
 
+  // Count holiday weeks between anchor and target to pause the rotation
+  let holidayWeeksBetween = 0;
+  if (holidayWeekMondays && holidayWeekMondays.size > 0 && diffWeeks !== 0) {
+    const step = diffWeeks > 0 ? 1 : -1;
+    const startMon = new Date(anchorMon);
+
+    // Walk week by week from anchor towards target (exclusive of both endpoints)
+    // We skip the anchor week itself and the target week itself
+    for (let w = step; Math.abs(w) < Math.abs(diffWeeks); w += step) {
+      const checkMon = new Date(startMon);
+      checkMon.setDate(startMon.getDate() + w * 7);
+      const checkISO = formatDateISO(checkMon);
+      if (holidayWeekMondays.has(checkISO)) {
+        holidayWeeksBetween++;
+      }
+    }
+  }
+
+  // Subtract holiday weeks so rotation pauses during holidays
+  const effectiveDiff = diffWeeks - (diffWeeks > 0 ? holidayWeeksBetween : -holidayWeeksBetween);
+
   // Use modulo to alternate: 0 → week 1, 1 → week 2, 2 → week 1, etc.
   // Handle negative weeks (dates before the anchor) correctly.
-  const mod = ((diffWeeks % 2) + 2) % 2; // always 0 or 1
+  const mod = ((effectiveDiff % 2) + 2) % 2; // always 0 or 1
   return mod === 0 ? 1 : 2;
 }
 
