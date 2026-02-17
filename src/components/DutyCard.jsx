@@ -5,6 +5,9 @@ import { formatTime } from '../utils/dateHelpers';
 // ===== DutyCard =====
 // Displays non-teaching duties like Break Duty, Line Manage, Detention.
 // Styled differently from lessons so they're visually distinct.
+// Height-adaptive: collapses to single row for short time slots.
+
+const COMPACT_THRESHOLD = 44;
 
 const DUTY_STYLES = {
   'Break Duty': {
@@ -27,13 +30,31 @@ const DUTY_STYLES = {
   },
 };
 
-export default function DutyCard({ duty }) {
+export default function DutyCard({ duty, height }) {
   const style = DUTY_STYLES[duty.activity] || DUTY_STYLES['Break Duty'];
   const Icon = style.icon;
+  const isCompact = height < COMPACT_THRESHOLD;
+
+  if (isCompact) {
+    return (
+      <div className={`
+        w-full h-full rounded-lg border px-2 flex items-center gap-1.5 overflow-hidden
+        ${style.bg} ${style.border}
+      `}>
+        <Icon size={11} className={`${style.text} shrink-0`} />
+        <span className={`text-[11px] font-semibold ${style.text} truncate`}>
+          {duty.activity}
+        </span>
+        <span className="text-[10px] text-navy/30 shrink-0 ml-auto">
+          {formatTime(duty.startTime)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={`
-      w-full rounded-xl border px-3 py-2
+      w-full h-full rounded-xl border px-3 py-2 overflow-hidden
       ${style.bg} ${style.border}
     `}>
       <div className="flex items-center gap-2">

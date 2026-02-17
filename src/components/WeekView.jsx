@@ -159,6 +159,24 @@ export default function WeekView({
     setViewMode('day');
   };
 
+  // Helper to find tasks in a given slot from a todos array
+  const findTasksInSlot = (todosArray, slot) => {
+    const slotDate = typeof slot.date === 'string' ? new Date(slot.date) : slot.date;
+    return todosArray
+      .filter(t => {
+        if (!t.scheduledSlot) return false;
+        const tDate = typeof t.scheduledSlot.date === 'string'
+          ? new Date(t.scheduledSlot.date) : t.scheduledSlot.date;
+        return tDate.toDateString() === slotDate.toDateString()
+          && t.scheduledSlot.startMinutes === slot.startMinutes;
+      })
+      .sort((a, b) => {
+        if (a.completed && !b.completed) return 1;
+        if (!a.completed && b.completed) return -1;
+        return (a.stackOrder || 0) - (b.stackOrder || 0);
+      });
+  };
+
   const handleScheduleTask = (taskId, slot) => {
     if (!todos || !onUpdateTodos) return;
     const serializedSlot = {
@@ -174,9 +192,20 @@ export default function WeekView({
         && t.scheduledSlot.startMinutes === slot.startMinutes;
     });
     const maxOrder = tasksInSlot.reduce((max, t) => Math.max(max, t.stackOrder || 0), -1);
-    onUpdateTodos(todos.map(t =>
+    const updatedTodos = todos.map(t =>
       t.id === taskId ? { ...t, scheduledSlot: serializedSlot, stackOrder: maxOrder + 1 } : t
-    ));
+    );
+    onUpdateTodos(updatedTodos);
+
+    // Refresh stack manager if open
+    if (stackManagerData) {
+      const refreshedTasks = findTasksInSlot(updatedTodos, stackManagerData.slot);
+      setStackManagerData({ slot: stackManagerData.slot, tasks: refreshedTasks });
+    }
+
+    // Auto-close scheduler
+    setShowTaskScheduler(false);
+    if (!stackManagerData) setSelectedFreeSlot(null);
   };
 
   const handleScheduleMultipleTasks = (taskIds, slot) => {
@@ -202,19 +231,48 @@ export default function WeekView({
       return t;
     });
     onUpdateTodos(updatedTodos);
+
+    // Refresh stack manager if open
+    if (stackManagerData) {
+      const refreshedTasks = findTasksInSlot(updatedTodos, stackManagerData.slot);
+      setStackManagerData({ slot: stackManagerData.slot, tasks: refreshedTasks });
+    }
+
+    // Auto-close scheduler
+    setShowTaskScheduler(false);
+    if (!stackManagerData) setSelectedFreeSlot(null);
   };
 
   const handleToggleTaskComplete = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    onUpdateTodos(todos.map(t =>
+    const updatedTodos = todos.map(t =>
       t.id === taskId ? { ...t, completed: !t.completed } : t
-    ));
+    );
+    onUpdateTodos(updatedTodos);
+
+    // Refresh stack manager if open so checkboxes update immediately
+    if (stackManagerData) {
+      const refreshedTasks = findTasksInSlot(updatedTodos, stackManagerData.slot);
+      setStackManagerData({ slot: stackManagerData.slot, tasks: refreshedTasks });
+    }
   };
 
   const handleDeleteTask = (taskId) => {
     if (!todos || !onUpdateTodos) return;
-    onUpdateTodos(todos.map(t =>
-      t.id === taskId ? { ...t, scheduledSlot: null } : t));
+    const updatedTodos = todos.map(t =>
+      t.id === taskId ? { ...t, scheduledSlot: null } : t
+    );
+    onUpdateTodos(updatedTodos);
+
+    // Refresh stack manager if open
+    if (stackManagerData) {
+      const refreshedTasks = findTasksInSlot(updatedTodos, stackManagerData.slot);
+      if (refreshedTasks.length === 0) {
+        setStackManagerData(null);
+      } else {
+        setStackManagerData({ slot: stackManagerData.slot, tasks: refreshedTasks });
+      }
+    }
   };
 
   const handleOpenStackManager = (slotKey, tasks) => {
@@ -453,10 +511,13 @@ export default function WeekView({
           onScheduleMultipleTasks={handleScheduleMultipleTasks}
           onClose={() => {
             setShowTaskScheduler(false);
-            setSelectedFreeSlot(null);
+            // If we came from stack manager, keep the slot but let stack manager show
+            if (!stackManagerData) {
+              setSelectedFreeSlot(null);
+            }
           }}
         />
-      ) : selectedFreeSlot && todos && onUpdateTodos ? (
+      ) : selectedFreeSlot && !stackManagerData && todos && onUpdateTodos ? (
         <TaskSchedulePanel
           slot={selectedFreeSlot}
           todos={todos}
@@ -471,9 +532,15 @@ export default function WeekView({
           allTodos={todos}
           onReorder={handleReorderStack}
           onToggleComplete={handleToggleTaskComplete}
-          onDeleteTask={handleDeleteTask}
-          onAddMore={() => setShowTaskScheduler(true)}
-          onClose={() => setStackManagerData(null)}
+          onRemoveTask={handleDeleteTask}
+          onAddMore={() => {
+            setSelectedFreeSlot(stackManagerData.slot);
+            setShowTaskScheduler(true);
+          }}
+          onClose={() => {
+            setStackManagerData(null);
+            setSelectedFreeSlot(null);
+          }}
         />
       ) : null}
     </div>
