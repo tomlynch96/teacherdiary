@@ -128,12 +128,7 @@ const CLASS_PALETTE = [
 
 /**
  * Get a consistent color for a class based on its position in the
- * classes array. Each class gets its own distinct color so they're
- * easy to tell apart at a glance on the week grid.
- *
- * @param {string} classId - the class ID
- * @param {Array} classes - the full classes array from timetable data
- * @returns {string} hex color
+ * classes array.
  */
 export function getClassColor(classId, classes) {
   if (!classes || !classId) return CLASS_PALETTE[0];
@@ -142,16 +137,10 @@ export function getClassColor(classId, classes) {
   return CLASS_PALETTE[index % CLASS_PALETTE.length];
 }
 
-/** Expose the palette so ClassView can show swatches */
 export { CLASS_PALETTE };
 
 /**
  * Merge consecutive half-periods for the same class into single blocks.
- * e.g. 12G2 period 3a (11:30-12:00) + 12G2 period 3b (12:00-12:30)
- *   → single block 12G2 periods 3a–3b (11:30-12:30)
- *
- * This makes the timetable much cleaner since your school's half-periods
- * are really one continuous lesson.
  */
 export function mergeConsecutiveLessons(lessons) {
   if (!lessons || lessons.length === 0) return [];
@@ -166,10 +155,8 @@ export function mergeConsecutiveLessons(lessons) {
   for (let i = 1; i < sorted.length; i++) {
     const next = sorted[i];
 
-    // Same class and the end time of current matches start time of next?
     if (current.classId === next.classId && current.endTime === next.startTime) {
       current.endTime = next.endTime;
-      // Show combined period range, e.g. "3a–3b"
       const firstPeriod = current.period.split('–')[0];
       current.period = `${firstPeriod}–${next.period}`;
     } else {
@@ -184,7 +171,6 @@ export function mergeConsecutiveLessons(lessons) {
 
 /**
  * Validate imported JSON structure.
- * Returns { valid: boolean, errors: string[] }
  */
 export function validateTimetableJSON(data) {
   const errors = [];
@@ -220,8 +206,7 @@ export function validateTimetableJSON(data) {
 }
 
 /**
- * Generate a storage key for a lesson instance.
- * Format: "classId::YYYY-MM-DD" e.g. "12G2::2026-02-09"
+ * Generate a storage key for a lesson instance (kept for backward compat).
  */
 export function lessonInstanceKey(classId, date) {
   const dateStr = typeof date === 'string' ? date : formatDateISO(date);
@@ -229,16 +214,16 @@ export function lessonInstanceKey(classId, date) {
 }
 
 /**
- * Generate concrete future lesson dates for a given class.
- * Projects the recurring timetable forward from today for `weeksAhead` weeks.
- * Returns merged lessons (half-periods combined) with actual dates.
+ * Generate timetable occurrences for a class — a numbered list of
+ * every future timetable slot. Each occurrence gets a sequential number
+ * which is used to map to the lesson sequence.
  *
  * @param {string} classId
  * @param {object} timetableData
- * @param {number} weeksAhead - how many weeks to project (default 20 = ~half a term)
- * @returns {Array} sorted array of { date, dayName, startTime, endTime, period, room, key }
+ * @param {number} weeksAhead
+ * @returns {Array} sorted array of { occurrenceNum, date, dateISO, dayName, startTime, endTime, period, room, classId }
  */
-export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
+export function generateTimetableOccurrences(classId, timetableData, weeksAhead = 26) {
   if (!timetableData?.recurringLessons) return [];
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
@@ -255,6 +240,7 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
   const startMonday = getMonday(today);
 
   const results = [];
+  let occurrenceNum = 0;
 
   for (let w = 0; w < weeksAhead; w++) {
     const weekStart = new Date(startMonday);
@@ -268,10 +254,9 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + d);
 
-      // Skip days in the past
       if (date < today) continue;
 
-      const dayOfWeek = d + 1; // 1=Mon..5=Fri
+      const dayOfWeek = d + 1;
 
       const dayLessons = classLessons
         .filter((rl) => {
@@ -281,11 +266,11 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
         })
         .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 
-      // Merge consecutive half-periods
       const merged = mergeConsecutiveLessons(dayLessons);
 
       for (const lesson of merged) {
         results.push({
+          occurrenceNum,
           date: new Date(date),
           dateISO: formatDateISO(date),
           dayName: dayNames[date.getDay()],
@@ -294,11 +279,42 @@ export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
           period: lesson.period,
           room: lesson.room,
           classId,
-          key: lessonInstanceKey(classId, date),
         });
+        occurrenceNum++;
       }
     }
   }
 
   return results;
+}
+
+/**
+ * For a given class and date, find the occurrence number.
+ * Used by WeekView/LessonPanel to look up what lesson content to show.
+ *
+ * @param {string} classId
+ * @param {string} dateISO - YYYY-MM-DD format
+ * @param {string} startTime - HH:MM format (to disambiguate if a class has 2 slots on same day)
+ * @param {object} timetableData
+ * @returns {number|null} occurrence number or null if not found
+ */
+export function getOccurrenceForDate(classId, dateISO, startTime, timetableData) {
+  const occurrences = generateTimetableOccurrences(classId, timetableData, 26);
+  const match = occurrences.find(
+    occ => occ.dateISO === dateISO && occ.startTime === startTime
+  );
+  return match ? match.occurrenceNum : null;
+}
+
+/**
+ * Generate concrete future lesson dates for a given class.
+ * KEPT for backward compatibility with ClassView's "See All" and other uses.
+ * Now also includes occurrenceNum on each result.
+ */
+export function generateFutureLessons(classId, timetableData, weeksAhead = 20) {
+  const occurrences = generateTimetableOccurrences(classId, timetableData, weeksAhead);
+  return occurrences.map(occ => ({
+    ...occ,
+    key: lessonInstanceKey(classId, occ.date), // kept for backward compat
+  }));
 }

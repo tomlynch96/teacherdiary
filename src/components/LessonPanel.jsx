@@ -12,56 +12,86 @@ import {
   StickyNote,
 } from 'lucide-react';
 import { formatTime, formatDateLong, formatDateISO } from '../utils/dateHelpers';
-import { getClassColor, lessonInstanceKey } from '../utils/timetable';
+import { getClassColor, getOccurrenceForDate } from '../utils/timetable';
+import { getLessonForOccurrence } from '../utils/storage';
 
 // ===== LessonPanel =====
 // Slide-out panel that opens when you click a lesson on the week view.
-// Lets you set a title, notes, and attach links/files for that specific
-// lesson instance. Also displays the class-level notes (read-only here).
+// Now works with the lesson sequence system:
+// - Looks up which occurrence number this date/time maps to
+// - Gets the lesson content from the sequence via that occurrence
+// - Creates a new lesson in the sequence if none exists yet
 
 export default function LessonPanel({
   lesson,
   timetableData,
-  lessonInstances,
-  onUpdateInstance,
+  lessonSequences,
+  lessonSchedules,
+  onUpdateLesson,
+  onAddLesson,
   onClose,
 }) {
   const classes = timetableData?.classes || [];
   const classData = classes.find((c) => c.id === lesson.classId);
   const accent = getClassColor(lesson.classId, classes);
   const dateStr = formatDateISO(lesson.date);
-  const key = lessonInstanceKey(lesson.classId, dateStr);
-  const instance = lessonInstances[key] || { title: '', notes: '', links: [] };
 
-  // Local editing state — syncs to parent on every change
-  const [title, setTitle] = useState(instance.title || '');
-  const [notes, setNotes] = useState(instance.notes || '');
-  const [links, setLinks] = useState(instance.links || []);
+  // Find the occurrence number for this lesson slot
+  const occurrenceNum = getOccurrenceForDate(
+    lesson.classId,
+    dateStr,
+    lesson.startTime,
+    timetableData
+  );
+
+  // Get the lesson content from the sequence
+  const lessonContent = occurrenceNum !== null
+    ? getLessonForOccurrence(lesson.classId, occurrenceNum)
+    : null;
+
+  // Local editing state
+  const [title, setTitle] = useState(lessonContent?.title || '');
+  const [notes, setNotes] = useState(lessonContent?.notes || '');
+  const [links, setLinks] = useState(lessonContent?.links || []);
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
   const [showAddLink, setShowAddLink] = useState(false);
+  const [currentLessonId, setCurrentLessonId] = useState(lessonContent?.id || null);
 
   // Reset local state when lesson changes
   useEffect(() => {
-    const inst = lessonInstances[key] || { title: '', notes: '', links: [] };
-    setTitle(inst.title || '');
-    setNotes(inst.notes || '');
-    setLinks(inst.links || []);
+    const content = occurrenceNum !== null
+      ? getLessonForOccurrence(lesson.classId, occurrenceNum)
+      : null;
+    setTitle(content?.title || '');
+    setNotes(content?.notes || '');
+    setLinks(content?.links || []);
+    setCurrentLessonId(content?.id || null);
     setShowAddLink(false);
     setNewLinkUrl('');
     setNewLinkLabel('');
-  }, [key, lessonInstances]);
+  }, [lesson.classId, dateStr, occurrenceNum, lessonSequences, lessonSchedules]);
 
-  // Auto-save on blur for text fields
+  // Save a field — creates a new lesson in the sequence if needed
   const saveField = (field, value) => {
-    onUpdateInstance(key, { ...instance, [field]: value });
+    if (currentLessonId) {
+      // Update existing lesson
+      onUpdateLesson(lesson.classId, currentLessonId, { [field]: value });
+    } else {
+      // Create new lesson in sequence
+      const newData = { title, notes, links, [field]: value };
+      const newLesson = onAddLesson(lesson.classId, newData);
+      if (newLesson) {
+        setCurrentLessonId(newLesson.id);
+      }
+    }
   };
 
   const addLink = () => {
     if (!newLinkUrl.trim()) return;
     const updated = [...links, { url: newLinkUrl.trim(), label: newLinkLabel.trim() || newLinkUrl.trim() }];
     setLinks(updated);
-    onUpdateInstance(key, { ...instance, links: updated });
+    saveField('links', updated);
     setNewLinkUrl('');
     setNewLinkLabel('');
     setShowAddLink(false);
@@ -70,7 +100,7 @@ export default function LessonPanel({
   const removeLink = (index) => {
     const updated = links.filter((_, i) => i !== index);
     setLinks(updated);
-    onUpdateInstance(key, { ...instance, links: updated });
+    saveField('links', updated);
   };
 
   return (

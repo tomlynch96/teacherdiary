@@ -71,7 +71,7 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                   <p className="text-xs text-navy/50 font-medium">{subject}</p>
                 )}
 
-                {showTitle && instanceData?.title && (
+                {instanceData?.title && (
                   <p className="text-xs font-medium text-navy/70 italic line-clamp-2 mt-1">
                     "{instanceData.title}"
                   </p>
@@ -117,7 +117,7 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                 )}
               </div>
 
-              {showTitle && instanceData?.title && (
+              {instanceData?.title && (
                 <p className="text-xs font-medium text-navy/70 italic line-clamp-1 mb-1">
                   "{instanceData.title}"
                 </p>

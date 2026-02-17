@@ -4,7 +4,7 @@ import LessonCard from './LessonCard';
 import DutyCard from './DutyCard';
 import FreePeriodSlot from './FreePeriodSlot';
 import TaskStack from './TaskStack';
-import { getClassColor, lessonInstanceKey } from '../utils/timetable';
+import { getClassColor } from '../utils/timetable';
 import { formatDateISO } from '../utils/dateHelpers';
 
 const PX_PER_MINUTE = 1.8;
@@ -17,7 +17,6 @@ export default function DayColumn({
   freePeriods,
   scheduledTasks,
   timetableData,
-  lessonInstances,
   todos,
   gridStartMin,
   gridHeight,
