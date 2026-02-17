@@ -145,12 +145,6 @@ export default function LessonPanel({
             </span>
           )}
           <span className="text-xs">{lesson.subject}</span>
-          {occurrenceNum !== null && (
-            <span className="text-[10px] font-bold ml-auto px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${accent}18`, color: accent }}>
-              #{occurrenceNum + 1} in sequence
-            </span>
-          )}
         </div>
       </div>
 

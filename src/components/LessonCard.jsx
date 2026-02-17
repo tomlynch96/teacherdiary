@@ -17,9 +17,6 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
   const className = classObj.className || lesson.className || 'Unknown Class';
   const subject = classObj.subject || lesson.subject || '';
 
-  // Sequence number from the occurrence mapping (added by WeekView)
-  const sequenceNum = instanceData?._occurrenceNum;
-
   const handleClick = (e) => {
     e.stopPropagation();
     onClick(lesson);
@@ -65,24 +62,16 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                   <h3 className="font-serif font-bold text-navy text-sm leading-tight flex-1" style={{ color: accent }}>
                     {className}
                   </h3>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {sequenceNum !== undefined && sequenceNum !== null && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: `${accent}15`, color: accent }}>
-                        #{sequenceNum + 1}
-                      </span>
-                    )}
-                    {hasData && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-sage mt-0.5" title="Has lesson content" />
-                    )}
-                  </div>
+                  {hasData && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0 mt-1" title="Has lesson content" />
+                  )}
                 </div>
                 
                 {subject && (
                   <p className="text-xs text-navy/50 font-medium">{subject}</p>
                 )}
 
-                {showTitle && instanceData?.title && (
+                {instanceData?.title && (
                   <p className="text-xs font-medium text-navy/70 italic line-clamp-2 mt-1">
                     "{instanceData.title}"
                   </p>
@@ -123,20 +112,12 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                 <h3 className="font-serif font-bold text-navy text-sm leading-tight" style={{ color: accent }}>
                   {className}
                 </h3>
-                <div className="flex items-center gap-1 shrink-0">
-                  {sequenceNum !== undefined && sequenceNum !== null && (
-                    <span className="text-[8px] font-bold px-1 py-0.5 rounded"
-                      style={{ backgroundColor: `${accent}15`, color: accent }}>
-                      #{sequenceNum + 1}
-                    </span>
-                  )}
-                  {hasData && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-sage mt-0.5" />
-                  )}
-                </div>
+                {hasData && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0 mt-1" />
+                )}
               </div>
 
-              {showTitle && instanceData?.title && (
+              {instanceData?.title && (
                 <p className="text-xs font-medium text-navy/70 italic line-clamp-1 mb-1">
                   "{instanceData.title}"
                 </p>
@@ -184,17 +165,9 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
         <div className="absolute left-full ml-2 top-0 z-50 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-4 pointer-events-none">
           <div className="space-y-3">
             <div>
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="font-serif font-bold text-navy text-base" style={{ color: accent }}>
-                  {className}
-                </h4>
-                {sequenceNum !== undefined && sequenceNum !== null && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: `${accent}18`, color: accent }}>
-                    #{sequenceNum + 1} in sequence
-                  </span>
-                )}
-              </div>
+              <h4 className="font-serif font-bold text-navy text-base mb-1" style={{ color: accent }}>
+                {className}
+              </h4>
               {subject && (
                 <p className="text-sm text-navy/50 font-medium">{subject}</p>
               )}
