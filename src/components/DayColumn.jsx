@@ -75,8 +75,8 @@ export default function DayColumn({
         const top = timeToTop(duty.startTime);
         const height = durationToHeight(duty.startTime, duty.endTime);
         return (
-          <div key={`duty-${di}`} className="absolute left-1 right-1 z-[2]" style={{ top, height, minHeight: 28 }}>
-            <DutyCard duty={duty} />
+          <div key={`duty-${di}`} className="absolute left-1 right-1 z-[2]" style={{ top, height, minHeight: 24 }}>
+            <DutyCard duty={duty} height={height} />
           </div>
         );
       })}
