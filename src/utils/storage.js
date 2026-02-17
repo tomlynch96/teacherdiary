@@ -199,13 +199,71 @@ export function clearTodos() {
 }
 
 // ---- Settings ----
+// Settings now includes:
+// - workHoursStart: "HH:MM" string for day start (default "09:00")
+// - workHoursEnd: "HH:MM" string for day end (default "16:00")
+// - holidays: array of { id, name, startDate, endDate, weekMondays: string[] }
+//   weekMondays contains ISO date strings of each Monday that falls within the holiday
+
+const DEFAULT_SETTINGS = {
+  theme: 'light',
+  workHoursStart: '09:00',
+  workHoursEnd: '16:00',
+  holidays: [],
+};
 
 export function getSettings() {
-  return getItem(KEYS.SETTINGS) || { theme: 'light' };
+  const saved = getItem(KEYS.SETTINGS);
+  return { ...DEFAULT_SETTINGS, ...saved };
 }
 
 export function setSettings(settings) {
   return setItem(KEYS.SETTINGS, settings);
+}
+
+/**
+ * Get all holiday week Monday ISO strings as a flat Set for quick lookup.
+ * Used by generateTimetableOccurrences to skip holiday weeks.
+ * Only includes full weeks (all 5 weekdays covered).
+ */
+export function getHolidayWeekMondays() {
+  const settings = getSettings();
+  const mondays = new Set();
+  (settings.holidays || []).forEach(h => {
+    (h.weekMondays || []).forEach(m => mondays.add(m));
+  });
+  return mondays;
+}
+
+/**
+ * Get all individual holiday dates as a flat Set for quick lookup.
+ * Used by WeekView to detect partial holiday days (e.g. bank holidays).
+ */
+export function getHolidayDates() {
+  const settings = getSettings();
+  const dates = new Set();
+  (settings.holidays || []).forEach(h => {
+    (h.holidayDates || []).forEach(d => dates.add(d));
+  });
+  return dates;
+}
+
+/**
+ * Find the holiday name for a given date ISO string.
+ * Returns the holiday name or null.
+ */
+export function getHolidayNameForDate(dateISO) {
+  const settings = getSettings();
+  for (const h of (settings.holidays || [])) {
+    if (h.holidayDates && h.holidayDates.includes(dateISO)) {
+      return h.name;
+    }
+    // Fallback: check if date falls within start/end range
+    if (dateISO >= h.startDate && dateISO <= h.endDate) {
+      return h.name;
+    }
+  }
+  return null;
 }
 
 // ---- Check if data is loaded ----
