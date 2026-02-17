@@ -199,13 +199,39 @@ export function clearTodos() {
 }
 
 // ---- Settings ----
+// Settings now includes:
+// - workHoursStart: "HH:MM" string for day start (default "09:00")
+// - workHoursEnd: "HH:MM" string for day end (default "16:00")
+// - holidays: array of { id, name, startDate, endDate, weekMondays: string[] }
+//   weekMondays contains ISO date strings of each Monday that falls within the holiday
+
+const DEFAULT_SETTINGS = {
+  theme: 'light',
+  workHoursStart: '09:00',
+  workHoursEnd: '16:00',
+  holidays: [],
+};
 
 export function getSettings() {
-  return getItem(KEYS.SETTINGS) || { theme: 'light' };
+  const saved = getItem(KEYS.SETTINGS);
+  return { ...DEFAULT_SETTINGS, ...saved };
 }
 
 export function setSettings(settings) {
   return setItem(KEYS.SETTINGS, settings);
+}
+
+/**
+ * Get all holiday week Monday ISO strings as a flat Set for quick lookup.
+ * Used by generateTimetableOccurrences to skip holiday weeks.
+ */
+export function getHolidayWeekMondays() {
+  const settings = getSettings();
+  const mondays = new Set();
+  (settings.holidays || []).forEach(h => {
+    (h.weekMondays || []).forEach(m => mondays.add(m));
+  });
+  return mondays;
 }
 
 // ---- Check if data is loaded ----

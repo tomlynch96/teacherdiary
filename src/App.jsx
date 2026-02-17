@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import WeekView from './components/WeekView';
 import ClassView from './components/ClassView';
 import ToDoView from './components/ToDoView';
+import SettingsView from './components/SettingsView';
 import FileImport from './components/FileImport';
 import {
   getTimetableData,
@@ -22,6 +23,8 @@ import {
   migrateFromLessonInstances,
   getTodos,
   setTodos,
+  getSettings,
+  setSettings,
 } from './utils/storage';
 
 // ===== App =====
@@ -30,6 +33,7 @@ import {
 // - Lesson sequences (ordered lesson content per class, independent of dates)
 // - Lesson schedules (maps timetable occurrences to sequence positions)
 // - To-do list (tasks with scheduling)
+// - Settings (work hours, holidays)
 // - Current navigation view
 
 export default function App() {
@@ -37,6 +41,7 @@ export default function App() {
   const [lessonSequences, setLessonSequencesState] = useState({});
   const [lessonSchedules, setLessonSchedulesState] = useState({});
   const [todos, setTodosState] = useState([]);
+  const [settings, setSettingsState] = useState(getSettings());
   const [currentView, setCurrentView] = useState('week');
   const [loading, setLoading] = useState(true);
 
@@ -58,6 +63,8 @@ export default function App() {
 
     const savedTodos = getTodos();
     if (savedTodos) setTodosState(savedTodos);
+
+    setSettingsState(getSettings());
 
     setLoading(false);
   }, []);
@@ -129,6 +136,12 @@ export default function App() {
     setTodos(newTodos);
   };
 
+  // Update settings
+  const handleUpdateSettings = (newSettings) => {
+    setSettingsState(newSettings);
+    setSettings(newSettings);
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-cream">
@@ -153,6 +166,7 @@ export default function App() {
             timetableData={timetable}
             lessonSequences={lessonSequences}
             lessonSchedules={lessonSchedules}
+            settings={settings}
             onUpdateLesson={handleUpdateLesson}
             onAddLesson={handleAddLesson}
             onClearData={handleClearData}
@@ -176,6 +190,12 @@ export default function App() {
             timetableData={timetable}
             todos={todos}
             onUpdateTodos={handleUpdateTodos}
+          />
+        ) : currentView === 'settings' ? (
+          <SettingsView
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            timetableData={timetable}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

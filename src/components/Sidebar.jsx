@@ -72,13 +72,20 @@ export default function Sidebar({ currentView, onNavigate, teacherName }) {
         })}
       </nav>
 
-      {/* ---- Footer / Settings (placeholder) ---- */}
+      {/* ---- Footer / Settings ---- */}
       <div className="p-3 border-t border-slate-100">
         <button
-          disabled
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-navy/25 cursor-not-allowed"
+          onClick={() => onNavigate('settings')}
+          className={`
+            w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium
+            transition-smooth
+            ${currentView === 'settings'
+              ? 'bg-[#81B29A]/10 text-sage'
+              : 'text-navy/60 hover:bg-sand hover:text-navy'
+            }
+          `}
         >
-          <Settings size={18} />
+          <Settings size={18} strokeWidth={currentView === 'settings' ? 2.5 : 2} />
           <span>Settings</span>
         </button>
       </div>

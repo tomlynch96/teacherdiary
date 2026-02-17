@@ -6,6 +6,7 @@ import {
   RotateCcw,
   Calendar,
   CalendarRange,
+  CalendarOff,
 } from 'lucide-react';
 import DayColumn from './DayColumn';
 import LessonPanel from './LessonPanel';
@@ -29,7 +30,7 @@ import {
   getTimeRange,
   getOccurrenceForDate,
 } from '../utils/timetable';
-import { getLessonForOccurrence } from '../utils/storage';
+import { getLessonForOccurrence, getHolidayWeekMondays, getSettings } from '../utils/storage';
 
 const PX_PER_MINUTE = 1.8;
 
@@ -42,6 +43,7 @@ export default function WeekView({
   onClearData,
   todos,
   onUpdateTodos,
+  settings,
 }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLesson, setSelectedLesson] = useState(null);
@@ -59,6 +61,22 @@ export default function WeekView({
   const weekNum = isTwoWeek && anchorDate
     ? getWeekNumber(currentDate, anchorDate)
     : null;
+
+  // Detect if current week is a holiday week
+  const holidayInfo = useMemo(() => {
+    const holidayMondays = getHolidayWeekMondays();
+    const mondayISO = formatDateISO(monday);
+    if (!holidayMondays.has(mondayISO)) return null;
+    // Find the holiday name
+    const allSettings = settings || getSettings();
+    const holidays = allSettings.holidays || [];
+    for (const h of holidays) {
+      if (h.weekMondays && h.weekMondays.includes(mondayISO)) {
+        return { name: h.name, startDate: h.startDate, endDate: h.endDate };
+      }
+    }
+    return { name: 'School Holiday' };
+  }, [monday, settings]);
 
   const rawLessonsByDay = useMemo(
     () => getLessonsForWeek(timetableData, weekDays),
@@ -79,8 +97,8 @@ export default function WeekView({
   );
 
   const { startHour, endHour } = useMemo(
-    () => getTimeRange(timetableData),
-    [timetableData]
+    () => getTimeRange(timetableData, settings),
+    [timetableData, settings]
   );
 
   const gridStartMin = startHour * 60;
@@ -336,6 +354,12 @@ export default function WeekView({
                 Week {weekNum}
               </span>
             )}
+            {holidayInfo && (
+              <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold bg-terracotta/15 text-terracotta">
+                <CalendarOff size={14} />
+                {holidayInfo.name}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -444,7 +468,28 @@ export default function WeekView({
                   style={{ top: (h - startHour) * 60 * PX_PER_MINUTE }} />
               ))}
 
-              {daysToRender.map((day, i) => {
+              {holidayInfo ? (
+                /* Holiday week overlay */
+                daysToRender.map((day, i) => (
+                  <div
+                    key={i}
+                    className="relative rounded-2xl border-2 border-dashed border-terracotta/20 bg-terracotta/[0.03]"
+                    style={{ height: gridHeight }}
+                  >
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+                      <CalendarOff size={28} className="text-terracotta/30" />
+                      <div className="text-center">
+                        <p className="font-serif text-sm font-bold text-terracotta/50">
+                          {holidayInfo.name}
+                        </p>
+                        <p className="text-[11px] text-navy/25 mt-1">No lessons this week</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                /* Normal day columns */
+                daysToRender.map((day, i) => {
                 const dayNum = day.getDay() === 0 ? 7 : day.getDay();
                 const lessons = lessonsByDay[dayNum] || [];
                 const duties = dutiesByDay[dayNum] || [];
@@ -486,7 +531,8 @@ export default function WeekView({
                     getLessonInstanceData={getLessonInstanceData}
                   />
                 );
-              })}
+              })
+              )}
             </div>
           </div>
         </div>

@@ -1,176 +1,160 @@
-// ===== Timetable Helpers =====
-// Maps recurring lesson definitions onto specific calendar days.
-// Supports both single-week and two-week timetable rotations.
+// ===== Timetable Utilities =====
 
-import { getDayOfWeek, timeToMinutes, getWeekNumber, getMonday, formatDateISO } from './dateHelpers';
+import {
+  getMonday,
+  getWeekNumber,
+  timeToMinutes,
+  formatDateISO,
+} from './dateHelpers';
+import { getHolidayWeekMondays } from './storage';
+
+// ---- 12-colour palette for per-class colouring ----
+const CLASS_COLOURS = [
+  '#81B29A', '#E07A5F', '#3D405B', '#F2CC8F',
+  '#A8DADC', '#E63946', '#457B9D', '#F4A261',
+  '#2A9D8F', '#264653', '#E76F51', '#606C38',
+];
 
 /**
- * Given the full timetable data and an array of 5 week-day Dates,
- * returns an object keyed by dayOfWeek (1-5) with sorted lesson arrays.
- *
- * For two-week timetables, we calculate which week (1 or 2) each date
- * falls in, and only show lessons matching that week number.
+ * Get the accent colour for a class, based on its position in the classes array.
+ */
+export function getClassColor(classId, classes = []) {
+  const index = classes.findIndex((c) => c.id === classId);
+  return CLASS_COLOURS[index >= 0 ? index % CLASS_COLOURS.length : 0];
+}
+
+/**
+ * For a given week (Mon–Fri dates), return an object { dayNum: [lessons] }
+ * where dayNum is 1-5 (Mon-Fri) and lessons have a `date` field added.
  */
 export function getLessonsForWeek(timetableData, weekDays) {
   if (!timetableData?.recurringLessons) return {};
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const weekNum = isTwoWeek && anchorDate
+    ? getWeekNumber(weekDays[0], anchorDate)
+    : null;
 
-  // Build a lookup map for class details
-  const classMap = {};
-  if (timetableData.classes) {
-    timetableData.classes.forEach((c) => {
-      classMap[c.id] = c;
-    });
-  }
+  const result = {};
 
-  const lessonsByDay = {};
-
-  weekDays.forEach((date) => {
-    const dayNum = getDayOfWeek(date); // 1=Mon ... 5=Fri
-
-    // For two-week timetables, determine if this date is in week 1 or 2
-    const currentWeekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(date, anchorDate)
-      : null;
+  weekDays.forEach((day) => {
+    const dayOfWeek = day.getDay() === 0 ? 7 : day.getDay();
 
     const dayLessons = timetableData.recurringLessons
       .filter((rl) => {
-        if (rl.dayOfWeek !== dayNum) return false;
-        if (isTwoWeek && currentWeekNum !== null && rl.weekNumber !== currentWeekNum) return false;
+        if (rl.dayOfWeek !== dayOfWeek) return false;
+        if (isTwoWeek && weekNum !== null && rl.weekNumber !== weekNum) return false;
         return true;
       })
       .map((rl) => ({
         ...rl,
-        date,
-        className: classMap[rl.classId]?.name || rl.classId,
-        classSize: classMap[rl.classId]?.classSize || null,
-        timetableCode: classMap[rl.classId]?.timetableCode || null,
+        date: day,
+        className: timetableData.classes?.find((c) => c.id === rl.classId)?.name || rl.classId,
+        classSize: timetableData.classes?.find((c) => c.id === rl.classId)?.classSize,
       }))
       .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 
-    lessonsByDay[dayNum] = dayLessons;
+    result[dayOfWeek] = dayLessons;
   });
 
-  return lessonsByDay;
+  return result;
 }
 
 /**
- * Get duties (break duty, line manage, detention) for the given week.
+ * For a given week (Mon–Fri dates), return duties { dayNum: [duties] }.
  */
 export function getDutiesForWeek(timetableData, weekDays) {
-  if (!timetableData?.duties?.length) return {};
+  if (!timetableData?.duties) return {};
 
   const isTwoWeek = !!timetableData.twoWeekTimetable;
   const anchorDate = timetableData.teacher?.exportDate;
+  const weekNum = isTwoWeek && anchorDate
+    ? getWeekNumber(weekDays[0], anchorDate)
+    : null;
 
-  const dutiesByDay = {};
+  const result = {};
 
-  weekDays.forEach((date) => {
-    const dayNum = getDayOfWeek(date);
-    const currentWeekNum = isTwoWeek && anchorDate
-      ? getWeekNumber(date, anchorDate)
-      : null;
-
-    dutiesByDay[dayNum] = (timetableData.duties || []).filter((d) => {
-      if (d.day !== dayNum) return false;
-      if (isTwoWeek && currentWeekNum !== null && d.week !== currentWeekNum) return false;
-      return true;
-    });
+  timetableData.duties.forEach((duty) => {
+    if (isTwoWeek && weekNum !== null && duty.week !== weekNum) return;
+    if (!result[duty.day]) result[duty.day] = [];
+    result[duty.day].push(duty);
   });
 
-  return dutiesByDay;
+  return result;
 }
-
-/**
- * Get the earliest start time and latest end time across all lessons.
- */
-export function getTimeRange(timetableData) {
-  if (!timetableData?.recurringLessons?.length) {
-    return { startHour: 8, endHour: 16 };
-  }
-
-  let earliest = 24 * 60;
-  let latest = 0;
-
-  timetableData.recurringLessons.forEach((rl) => {
-    const start = timeToMinutes(rl.startTime);
-    const end = timeToMinutes(rl.endTime);
-    if (start < earliest) earliest = start;
-    if (end > latest) latest = end;
-  });
-
-  return {
-    startHour: Math.floor(earliest / 60),
-    endHour: Math.ceil(latest / 60),
-  };
-}
-
-/**
- * A palette of 12 visually distinct, warm-professional colors.
- * Each class gets assigned a unique color by index.
- */
-const CLASS_PALETTE = [
-  '#81B29A', // sage
-  '#E07A5F', // terracotta
-  '#3D405B', // navy
-  '#6A994E', // forest
-  '#BC6C25', // amber
-  '#7B68EE', // medium slate blue
-  '#D4A373', // tan
-  '#457B9D', // steel blue
-  '#E63946', // red
-  '#2A9D8F', // teal
-  '#A855F7', // purple
-  '#F4845F', // coral
-];
-
-/**
- * Get a consistent color for a class based on its position in the
- * classes array.
- */
-export function getClassColor(classId, classes) {
-  if (!classes || !classId) return CLASS_PALETTE[0];
-  const index = classes.findIndex((c) => c.id === classId);
-  if (index === -1) return CLASS_PALETTE[0];
-  return CLASS_PALETTE[index % CLASS_PALETTE.length];
-}
-
-export { CLASS_PALETTE };
 
 /**
  * Merge consecutive half-periods for the same class into single blocks.
+ * e.g. 3a (11:30–12:00) + 3b (12:00–12:30) for "12G2" becomes one card: 3a–3b (11:30–12:30).
  */
 export function mergeConsecutiveLessons(lessons) {
   if (!lessons || lessons.length === 0) return [];
 
-  const sorted = [...lessons].sort(
-    (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
-  );
-
+  const sorted = [...lessons].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
   const merged = [];
-  let current = { ...sorted[0] };
+  let current = { ...sorted[0], periods: [sorted[0].period] };
 
   for (let i = 1; i < sorted.length; i++) {
     const next = sorted[i];
-
-    if (current.classId === next.classId && current.endTime === next.startTime) {
-      current.endTime = next.endTime;
-      const firstPeriod = current.period.split('–')[0];
-      current.period = `${firstPeriod}–${next.period}`;
+    if (next.classId === current.classId && next.startTime === current.endTime) {
+      current = {
+        ...current,
+        endTime: next.endTime,
+        periods: [...current.periods, next.period],
+        period: `${current.periods[0]}–${next.period}`,
+      };
     } else {
       merged.push(current);
-      current = { ...next };
+      current = { ...next, periods: [next.period] };
     }
   }
   merged.push(current);
-
   return merged;
 }
 
 /**
- * Validate imported JSON structure.
+ * Get the earliest start and latest end across all lessons + duties.
+ * Used to define the calendar grid range.
+ * Now accepts optional settings for work hours override.
+ */
+export function getTimeRange(timetableData, settings = null) {
+  let earliest = 24;
+  let latest = 0;
+
+  // If settings have work hours, use those as the base
+  if (settings?.workHoursStart && settings?.workHoursEnd) {
+    const startParts = settings.workHoursStart.split(':').map(Number);
+    const endParts = settings.workHoursEnd.split(':').map(Number);
+    earliest = startParts[0];
+    latest = endParts[1] > 0 ? endParts[0] + 1 : endParts[0];
+  }
+
+  // Also check timetable data to ensure we cover everything
+  const allTimes = [];
+  if (timetableData?.recurringLessons) {
+    timetableData.recurringLessons.forEach((rl) => {
+      allTimes.push(rl.startTime, rl.endTime);
+    });
+  }
+  if (timetableData?.duties) {
+    timetableData.duties.forEach((d) => {
+      allTimes.push(d.startTime, d.endTime);
+    });
+  }
+
+  allTimes.forEach((t) => {
+    const mins = timeToMinutes(t);
+    const hour = Math.floor(mins / 60);
+    earliest = Math.min(earliest, hour);
+    latest = Math.max(latest, mins % 60 > 0 ? hour + 1 : hour);
+  });
+
+  return { startHour: earliest, endHour: latest };
+}
+
+/**
+ * Validate imported timetable JSON structure.
  */
 export function validateTimetableJSON(data) {
   const errors = [];
@@ -218,6 +202,9 @@ export function lessonInstanceKey(classId, date) {
  * every future timetable slot. Each occurrence gets a sequential number
  * which is used to map to the lesson sequence.
  *
+ * NOW SKIPS HOLIDAY WEEKS: reads holiday week Mondays from settings
+ * and excludes any dates that fall within a holiday week.
+ *
  * @param {string} classId
  * @param {object} timetableData
  * @param {number} weeksAhead
@@ -235,6 +222,9 @@ export function generateTimetableOccurrences(classId, timetableData, weeksAhead 
   );
   if (classLessons.length === 0) return [];
 
+  // Get holiday week Mondays for skipping
+  const holidayMondays = getHolidayWeekMondays();
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const startMonday = getMonday(today);
@@ -245,6 +235,12 @@ export function generateTimetableOccurrences(classId, timetableData, weeksAhead 
   for (let w = 0; w < weeksAhead; w++) {
     const weekStart = new Date(startMonday);
     weekStart.setDate(startMonday.getDate() + w * 7);
+
+    // Skip this week if it's a holiday week
+    const weekMondayISO = formatDateISO(weekStart);
+    if (holidayMondays.has(weekMondayISO)) {
+      continue;
+    }
 
     const weekNum = isTwoWeek && anchorDate
       ? getWeekNumber(weekStart, anchorDate)
