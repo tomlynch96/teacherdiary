@@ -25,6 +25,10 @@ import {
   setTodos,
   getSettings,
   setSettings,
+  copyTopicToClass,
+  renameTopic,
+  removeTopic,
+  unlinkLesson,
 } from './utils/storage';
 
 // ===== App =====
@@ -142,6 +146,30 @@ export default function App() {
     setSettings(newSettings);
   };
 
+  // Copy a topic from one class to another (linked or independent)
+  const handleCopyTopic = (sourceClassId, topicId, targetClassId, linked) => {
+    copyTopicToClass(sourceClassId, topicId, targetClassId, linked);
+    setLessonSequencesState(getLessonSequences());
+  };
+
+  // Rename a topic across all lessons in a class
+  const handleRenameTopic = (classId, topicId, newName) => {
+    renameTopic(classId, topicId, newName);
+    setLessonSequencesState(getLessonSequences());
+  };
+
+  // Remove topic grouping (lessons remain, just ungrouped)
+  const handleRemoveTopic = (classId, topicId) => {
+    removeTopic(classId, topicId);
+    setLessonSequencesState(getLessonSequences());
+  };
+
+  // Unlink a lesson from its source
+  const handleUnlinkLesson = (classId, lessonId) => {
+    unlinkLesson(classId, lessonId);
+    setLessonSequencesState(getLessonSequences());
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-cream">
@@ -184,6 +212,10 @@ export default function App() {
             onDeleteLesson={handleDeleteLesson}
             onReorderSequence={handleReorderSequence}
             onUpdateSchedule={handleUpdateSchedule}
+            onCopyTopic={handleCopyTopic}
+            onRenameTopic={handleRenameTopic}
+            onRemoveTopic={handleRemoveTopic}
+            onUnlinkLesson={handleUnlinkLesson}
           />
         ) : currentView === 'todos' ? (
           <ToDoView

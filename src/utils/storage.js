@@ -57,8 +57,17 @@ export function clearTimetableData() {
 }
 
 // ---- Lesson Sequences ----
-// Structure: { classId: [ { id, title, notes, links, order }, ... ] }
+// Structure: { classId: [ { id, title, notes, links, order, topicId?, topicName?, linkedSourceId? }, ... ] }
 // This is the CONTENT of lessons, independent of dates.
+//
+// Topic fields:
+//   topicId   - unique ID grouping lessons into a topic (null = ungrouped)
+//   topicName - display name of the topic
+//
+// Linked lesson fields:
+//   linkedSourceId - if set, this lesson mirrors another lesson's content.
+//                    Format: "classId::lessonId" pointing to the source lesson.
+//                    When a linked lesson is edited, the source (and all its links) update too.
 
 export function getLessonSequences() {
   return getItem(KEYS.LESSON_SEQUENCES) || {};
@@ -92,6 +101,9 @@ export function addLessonToSequence(classId, data = {}) {
     notes: data.notes || '',
     links: data.links || [],
     order: maxOrder,
+    topicId: data.topicId || null,
+    topicName: data.topicName || null,
+    linkedSourceId: data.linkedSourceId || null,
   };
   all[classId] = [...seq, newLesson];
   setLessonSequences(all);
@@ -100,20 +112,90 @@ export function addLessonToSequence(classId, data = {}) {
 
 /**
  * Update a lesson within a class's sequence.
- * `updates` can include title, notes, links.
+ * `updates` can include title, notes, links, topicId, topicName.
+ *
+ * If the lesson has a linkedSourceId, also update the source lesson
+ * and all other lessons linked to the same source.
  */
 export function updateLessonInSequence(classId, lessonId, updates) {
   const all = getLessonSequences();
   const seq = all[classId] || [];
+  const lesson = seq.find(l => l.id === lessonId);
+
+  // Determine which fields are "content" fields that should propagate to linked lessons
+  const contentFields = {};
+  const metaFields = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (['title', 'notes', 'links'].includes(key)) {
+      contentFields[key] = value;
+    } else {
+      metaFields[key] = value;
+    }
+  }
+
+  // Update the lesson itself (all fields)
   all[classId] = seq.map(l => l.id === lessonId ? { ...l, ...updates } : l);
+
+  // If there are content updates and this lesson is linked, propagate
+  if (Object.keys(contentFields).length > 0 && lesson) {
+    const sourceRef = lesson.linkedSourceId; // e.g. "12G2::12G2-lesson-123"
+
+    if (sourceRef) {
+      // This lesson IS a linked copy — update the source and all siblings
+      const [sourceClassId, sourceLessonId] = sourceRef.split('::');
+      const sourceKey = sourceRef;
+
+      // Update the source lesson
+      if (all[sourceClassId]) {
+        all[sourceClassId] = all[sourceClassId].map(l =>
+          l.id === sourceLessonId ? { ...l, ...contentFields } : l
+        );
+      }
+
+      // Update all other lessons that link to the same source
+      for (const cId of Object.keys(all)) {
+        all[cId] = all[cId].map(l => {
+          if (l.linkedSourceId === sourceKey && !(cId === classId && l.id === lessonId)) {
+            return { ...l, ...contentFields };
+          }
+          return l;
+        });
+      }
+    }
+
+    // If this lesson IS a source for other linked lessons, propagate to them
+    const thisRef = `${classId}::${lessonId}`;
+    for (const cId of Object.keys(all)) {
+      all[cId] = all[cId].map(l => {
+        if (l.linkedSourceId === thisRef) {
+          return { ...l, ...contentFields };
+        }
+        return l;
+      });
+    }
+  }
+
   setLessonSequences(all);
 }
 
 /**
  * Delete a lesson from a class's sequence and reorder remaining.
+ * If the lesson is a linked source, unlink all copies (they become independent).
  */
 export function deleteLessonFromSequence(classId, lessonId) {
   const all = getLessonSequences();
+
+  // Before deleting, unlink any lessons that point to this one
+  const thisRef = `${classId}::${lessonId}`;
+  for (const cId of Object.keys(all)) {
+    all[cId] = (all[cId] || []).map(l => {
+      if (l.linkedSourceId === thisRef) {
+        return { ...l, linkedSourceId: null };
+      }
+      return l;
+    });
+  }
+
   const seq = (all[classId] || []).filter(l => l.id !== lessonId);
   // Re-number order to be contiguous
   seq.sort((a, b) => a.order - b.order).forEach((l, i) => { l.order = i; });
@@ -134,6 +216,126 @@ export function reorderClassSequence(classId, orderedIds) {
     if (lesson) return { ...lesson, order: i };
     return null;
   }).filter(Boolean);
+  setLessonSequences(all);
+}
+
+// ---- Topic Management ----
+
+/**
+ * Get unique topics from a class's lesson sequence.
+ * Returns array of { topicId, topicName, lessonCount }.
+ */
+export function getClassTopics(classId) {
+  const seq = getClassSequence(classId);
+  const topicMap = new Map();
+  for (const lesson of seq) {
+    if (lesson.topicId) {
+      if (!topicMap.has(lesson.topicId)) {
+        topicMap.set(lesson.topicId, { topicId: lesson.topicId, topicName: lesson.topicName, lessonCount: 0 });
+      }
+      topicMap.get(lesson.topicId).lessonCount++;
+    }
+  }
+  return Array.from(topicMap.values());
+}
+
+/**
+ * Assign a topic to a lesson.
+ */
+export function setLessonTopic(classId, lessonId, topicId, topicName) {
+  updateLessonInSequence(classId, lessonId, { topicId, topicName });
+}
+
+/**
+ * Rename a topic across all lessons in a class that have that topicId.
+ */
+export function renameTopic(classId, topicId, newName) {
+  const all = getLessonSequences();
+  const seq = all[classId] || [];
+  all[classId] = seq.map(l =>
+    l.topicId === topicId ? { ...l, topicName: newName } : l
+  );
+  setLessonSequences(all);
+}
+
+/**
+ * Remove topic grouping from all lessons with a given topicId in a class.
+ * (Lessons remain, just ungrouped.)
+ */
+export function removeTopic(classId, topicId) {
+  const all = getLessonSequences();
+  const seq = all[classId] || [];
+  all[classId] = seq.map(l =>
+    l.topicId === topicId ? { ...l, topicId: null, topicName: null } : l
+  );
+  setLessonSequences(all);
+}
+
+/**
+ * Copy an entire topic's lessons from one class to another.
+ *
+ * @param {string} sourceClassId - class to copy from
+ * @param {string} topicId - which topic to copy
+ * @param {string} targetClassId - class to copy to
+ * @param {boolean} linked - if true, copies are linked to the source lessons
+ *                           (editing one updates all). If false, independent copies.
+ * @returns {number} number of lessons copied
+ */
+export function copyTopicToClass(sourceClassId, topicId, targetClassId, linked = false) {
+  const all = getLessonSequences();
+  const sourceSeq = (all[sourceClassId] || []).filter(l => l.topicId === topicId);
+  if (sourceSeq.length === 0) return 0;
+
+  // Sort by order to maintain lesson ordering
+  sourceSeq.sort((a, b) => a.order - b.order);
+
+  const targetSeq = all[targetClassId] || [];
+  const maxOrder = targetSeq.length > 0 ? Math.max(...targetSeq.map(l => l.order)) + 1 : 0;
+
+  // Generate a new topicId for the target class's copies
+  const newTopicId = linked ? topicId : `topic-${Date.now()}`;
+
+  const newLessons = sourceSeq.map((lesson, i) => ({
+    id: `${targetClassId}-lesson-${Date.now()}-${i}`,
+    title: lesson.title,
+    notes: lesson.notes,
+    links: lesson.links ? JSON.parse(JSON.stringify(lesson.links)) : [],
+    order: maxOrder + i,
+    topicId: newTopicId,
+    topicName: lesson.topicName,
+    linkedSourceId: linked ? `${sourceClassId}::${lesson.id}` : null,
+  }));
+
+  all[targetClassId] = [...targetSeq, ...newLessons];
+  setLessonSequences(all);
+  return newLessons.length;
+}
+
+/**
+ * Check if a lesson has linked copies anywhere.
+ * Returns true if any lesson in any class has linkedSourceId pointing to this lesson.
+ */
+export function hasLinkedCopies(classId, lessonId) {
+  const all = getLessonSequences();
+  const ref = `${classId}::${lessonId}`;
+  for (const cId of Object.keys(all)) {
+    for (const l of (all[cId] || [])) {
+      if (l.linkedSourceId === ref) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Unlink a lesson — make it independent of its source.
+ * Content remains as-is but future edits won't propagate.
+ */
+export function unlinkLesson(classId, lessonId) {
+  const all = getLessonSequences();
+  const seq = all[classId] || [];
+  all[classId] = seq.map(l =>
+    l.id === lessonId ? { ...l, linkedSourceId: null } : l
+  );
   setLessonSequences(all);
 }
 
@@ -304,6 +506,9 @@ export function migrateFromLessonInstances(timetableData, generateOccurrencesFn)
       notes: inst.notes || '',
       links: inst.links || [],
       order: i,
+      topicId: null,
+      topicName: null,
+      linkedSourceId: null,
     }));
     schedules[classId] = { startIndex: 0 };
   }
