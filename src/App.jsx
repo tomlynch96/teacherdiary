@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
+import HomePage from './components/HomePage';
 import WeekView from './components/WeekView';
 import ClassView from './components/ClassView';
 import ToDoView from './components/ToDoView';
@@ -32,30 +33,19 @@ import {
   addLessonToLinkedTopic,
 } from './utils/storage';
 
-// ===== App =====
-// Root component. Manages:
-// - Timetable data (imported JSON + class edits)
-// - Lesson sequences (ordered lesson content per class, independent of dates)
-// - Lesson schedules (maps timetable occurrences to sequence positions)
-// - To-do list (tasks with scheduling)
-// - Settings (work hours, holidays)
-// - Current navigation view
-
 export default function App() {
   const [timetable, setTimetable] = useState(null);
   const [lessonSequences, setLessonSequencesState] = useState({});
   const [lessonSchedules, setLessonSchedulesState] = useState({});
   const [todos, setTodosState] = useState([]);
   const [settings, setSettingsState] = useState(getSettings());
-  const [currentView, setCurrentView] = useState('week');
+  const [currentView, setCurrentView] = useState('home');
   const [loading, setLoading] = useState(true);
 
-  // On mount, load persisted data
   useEffect(() => {
     const savedTimetable = getTimetableData();
     if (savedTimetable) setTimetable(savedTimetable);
 
-    // Attempt migration from old lessonInstances format
     if (savedTimetable) {
       migrateFromLessonInstances(savedTimetable, null);
     }
@@ -70,7 +60,6 @@ export default function App() {
     if (savedTodos) setTodosState(savedTodos);
 
     setSettingsState(getSettings());
-
     setLoading(false);
   }, []);
 
@@ -85,11 +74,10 @@ export default function App() {
       setTimetable(null);
       setLessonSequencesState({});
       setLessonSchedulesState({});
-      setCurrentView('week');
+      setCurrentView('home');
     }
   };
 
-  // Update a class's editable fields (classSize, notes, etc.)
   const handleUpdateClass = (classId, updates) => {
     setTimetable((prev) => {
       const updated = {
@@ -103,75 +91,61 @@ export default function App() {
     });
   };
 
-  // Update a lesson within a class's sequence
   const handleUpdateLesson = (classId, lessonId, updates) => {
     updateLessonInSequence(classId, lessonId, updates);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Add a new lesson to a class's sequence
   const handleAddLesson = (classId, data) => {
-    const newLesson = addLessonToSequence(classId, data);
+    addLessonToSequence(classId, data);
     setLessonSequencesState(getLessonSequences());
-    return newLesson;
   };
 
-  // Delete a lesson from a class's sequence
   const handleDeleteLesson = (classId, lessonId) => {
     deleteLessonFromSequence(classId, lessonId);
     setLessonSequencesState(getLessonSequences());
-    setLessonSchedulesState(getLessonSchedules());
   };
 
-  // Reorder lessons within a class's sequence
   const handleReorderSequence = (classId, orderedIds) => {
     reorderClassSequence(classId, orderedIds);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Update the schedule mapping for a class (e.g. push back)
   const handleUpdateSchedule = (classId, schedule) => {
     setClassSchedule(classId, schedule);
     setLessonSchedulesState(getLessonSchedules());
   };
 
-  // Update todos
   const handleUpdateTodos = (newTodos) => {
     setTodosState(newTodos);
     setTodos(newTodos);
   };
 
-  // Update settings
   const handleUpdateSettings = (newSettings) => {
     setSettingsState(newSettings);
     setSettings(newSettings);
   };
 
-  // Copy a topic from one class to another (linked or independent)
   const handleCopyTopic = (sourceClassId, topicId, targetClassId, linked) => {
     copyTopicToClass(sourceClassId, topicId, targetClassId, linked);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Rename a topic across all lessons in a class
   const handleRenameTopic = (classId, topicId, newName) => {
     renameTopic(classId, topicId, newName);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Remove topic grouping (lessons remain, just ungrouped)
   const handleRemoveTopic = (classId, topicId) => {
     removeTopic(classId, topicId);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Unlink a lesson from its source
   const handleUnlinkLesson = (classId, lessonId) => {
     unlinkLesson(classId, lessonId);
     setLessonSequencesState(getLessonSequences());
   };
 
-  // Add a lesson inside a topic — auto-propagates to linked classes
   const handleAddLessonToTopic = (classId, topicId, topicName, data) => {
     addLessonToLinkedTopic(classId, topicId, topicName, data);
     setLessonSequencesState(getLessonSequences());
@@ -196,6 +170,16 @@ export default function App() {
       <main className="flex-1 flex flex-col min-h-0 min-w-0">
         {!timetable ? (
           <FileImport onImport={handleImport} />
+        ) : currentView === 'home' ? (
+          <HomePage
+            timetableData={timetable}
+            lessonSequences={lessonSequences}
+            lessonSchedules={lessonSchedules}
+            settings={settings}
+            todos={todos}
+            onUpdateTodos={handleUpdateTodos}
+            onNavigate={setCurrentView}
+          />
         ) : currentView === 'week' ? (
           <WeekView
             timetableData={timetable}

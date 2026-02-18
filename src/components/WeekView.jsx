@@ -297,6 +297,11 @@ export default function WeekView({
     }
   };
 
+  const handleCreateTask = (newTask) => {
+    if (!onUpdateTodos) return;
+    onUpdateTodos([...todos, newTask]);
+  };
+
   const handleOpenStackManager = (slotKey, tasks) => {
     const firstTask = tasks[0];
     setStackManagerData({ slot: firstTask.scheduledSlot, tasks });
@@ -582,6 +587,7 @@ export default function WeekView({
           todos={todos}
           onScheduleTask={handleScheduleTask}
           onScheduleMultipleTasks={handleScheduleMultipleTasks}
+          onCreateTask={handleCreateTask}
           onClose={() => {
             setShowTaskScheduler(false);
             // If we came from stack manager, keep the slot but let stack manager show
@@ -596,6 +602,7 @@ export default function WeekView({
           todos={todos}
           onScheduleTask={handleScheduleTask}
           onScheduleMultipleTasks={handleScheduleMultipleTasks}
+          onCreateTask={handleCreateTask}
           onClose={() => setSelectedFreeSlot(null)}
         />
       ) : stackManagerData ? (

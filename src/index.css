@@ -41,3 +41,36 @@ body {
 .lesson-english { background-color: rgba(224, 122, 95, 0.08); }
 .lesson-science { background-color: rgba(224, 122, 95, 0.10); }
 .lesson-default { background-color: rgba(244, 241, 222, 0.8); }
+
+
+/* ===== HomePage Info Panel ===== */
+
+.info-panel-appear {
+  animation: info-slide-in 200ms ease-out both;
+}
+
+.info-panel-dismiss {
+  animation: info-slide-out 250ms ease-in both;
+}
+
+@keyframes info-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes info-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
