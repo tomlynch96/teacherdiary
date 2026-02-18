@@ -14,6 +14,7 @@ import {
   Sunrise,
   FolderOpen,
   CheckSquare,
+  Check,
 } from 'lucide-react';
 import {
   getWeekDays,
@@ -102,6 +103,7 @@ export default function HomePage({
   lessonSchedules,
   settings,
   todos,
+  onUpdateTodos,
   onNavigate,
 }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -215,21 +217,44 @@ export default function HomePage({
     var scheduled = [];
     var unscheduled = [];
     (todos || []).forEach(function (t) {
-      if (t.completed) return;
       if (t.scheduledSlot) {
         var slotDate = typeof t.scheduledSlot.date === 'string'
           ? t.scheduledSlot.date.split('T')[0]
           : formatDateISO(t.scheduledSlot.date);
         if (slotDate === dateISO) scheduled.push(t);
-      } else {
+      } else if (!t.completed) {
         unscheduled.push(t);
       }
     });
-    return { scheduledTodos: scheduled, unscheduledTodos: unscheduled };
+    // Group scheduled tasks by their time slot
+    var slotGroups = {};
+    scheduled.forEach(function (t) {
+      var key = t.scheduledSlot.startMinutes + '-' + t.scheduledSlot.endMinutes;
+      if (!slotGroups[key]) slotGroups[key] = [];
+      slotGroups[key].push(t);
+    });
+    // Sort within each group: incomplete first by stackOrder, completed at end
+    Object.keys(slotGroups).forEach(function (key) {
+      slotGroups[key].sort(function (a, b) {
+        if (a.completed && !b.completed) return 1;
+        if (!a.completed && b.completed) return -1;
+        return (a.stackOrder || 0) - (b.stackOrder || 0);
+      });
+    });
+    return { slotGroups: slotGroups, unscheduledTodos: unscheduled };
   }, [todos, currentDate]);
 
-  var scheduledTodos = scheduledAndUnscheduled.scheduledTodos;
+  var slotGroups = scheduledAndUnscheduled.slotGroups;
   var unscheduledTodos = scheduledAndUnscheduled.unscheduledTodos;
+
+  // Toggle task completion
+  var handleToggleTask = useCallback(function (taskId) {
+    if (!onUpdateTodos) return;
+    var updatedTodos = (todos || []).map(function (t) {
+      return t.id === taskId ? Object.assign({}, t, { completed: !t.completed }) : t;
+    });
+    onUpdateTodos(updatedTodos);
+  }, [todos, onUpdateTodos]);
 
   var weekNum = useMemo(function () {
     if (!timetableData || !timetableData.twoWeekTimetable) return null;
@@ -277,11 +302,13 @@ export default function HomePage({
     todayDuties.forEach(function (d) {
       items.push({ type: 'duty', data: d, startMin: timeToMinutes(d.startTime) });
     });
-    scheduledTodos.forEach(function (t) {
-      items.push({ type: 'task', data: t, startMin: t.scheduledSlot.startMinutes });
+    Object.keys(slotGroups).forEach(function (key) {
+      var tasks = slotGroups[key];
+      var startMin = tasks[0].scheduledSlot.startMinutes;
+      items.push({ type: 'taskGroup', data: tasks, startMin: startMin });
     });
     return items.sort(function (a, b) { return a.startMin - b.startMin; });
-  }, [enrichedLessons, todayDuties, scheduledTodos]);
+  }, [enrichedLessons, todayDuties, slotGroups]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-cream overflow-auto">
@@ -371,20 +398,50 @@ export default function HomePage({
                     );
                   }
 
-                  if (item.type === 'task') {
-                    var task = item.data;
-                    var slot = task.scheduledSlot;
+                  if (item.type === 'taskGroup') {
+                    var tasks = item.data;
+                    var slot = tasks[0].scheduledSlot;
                     var timeStr = formatMinutes(slot.startMinutes) + ' \u2013 ' + formatMinutes(slot.endMinutes);
+                    var remaining = tasks.filter(function (t) { return !t.completed; }).length;
+                    var completed = tasks.length - remaining;
                     return (
                       <div
-                        key={'task-' + task.id}
-                        className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#81B29A]/5 border border-[#81B29A]/15 transition-all duration-300 ease-out origin-left"
+                        key={'taskgroup-' + idx}
+                        className="rounded-2xl border border-[#81B29A]/15 bg-[#81B29A]/5 transition-all duration-300 ease-out origin-left overflow-hidden"
                         style={{ width: isInactive ? '60%' : '100%', opacity: isInactive ? 0.45 : 1 }}
                       >
-                        <CheckSquare size={14} className="text-sage/50 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-navy/60 truncate">{task.text}</p>
-                          <p className="text-xs text-navy/25">{timeStr}</p>
+                        {/* Slot header */}
+                        <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+                          <div className="flex items-center gap-2">
+                            <CheckSquare size={13} className="text-sage/50" />
+                            <span className="text-xs font-medium text-navy/35">{timeStr}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-navy/25">
+                            {remaining > 0 && <span>{remaining} remaining</span>}
+                            {completed > 0 && <span className="text-sage/60">{completed} done</span>}
+                          </div>
+                        </div>
+                        {/* Task list */}
+                        <div className="px-2 pb-2 space-y-1">
+                          {tasks.map(function (task) {
+                            return (
+                              <div key={task.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/60 transition-smooth group">
+                                <button
+                                  onClick={function (e) { e.stopPropagation(); handleToggleTask(task.id); }}
+                                  className="shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-smooth"
+                                  style={{
+                                    borderColor: task.completed ? '#81B29A' : 'rgb(203 213 225)',
+                                    backgroundColor: task.completed ? '#81B29A' : 'transparent',
+                                  }}
+                                >
+                                  {task.completed && <Check size={10} className="text-white" strokeWidth={3} />}
+                                </button>
+                                <span className={'text-sm truncate ' + (task.completed ? 'line-through text-navy/25' : 'text-navy/60 font-medium')}>
+                                  {task.text}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -451,9 +508,12 @@ export default function HomePage({
                     </p>
                     {unscheduledTodos.map(function (todo) {
                       return (
-                        <div key={todo.id} className="flex items-center gap-2 py-1.5 text-sm text-navy/40">
-                          <div className="w-1.5 h-1.5 rounded-full bg-sage/30 shrink-0" />
-                          <span className="truncate">{todo.text}</span>
+                        <div key={todo.id} className="flex items-center gap-2.5 py-1.5 group">
+                          <button
+                            onClick={function () { handleToggleTask(todo.id); }}
+                            className="shrink-0 w-3.5 h-3.5 rounded border-2 border-slate-300 hover:border-sage hover:bg-sage/10 transition-smooth flex items-center justify-center"
+                          />
+                          <span className="text-sm text-navy/40 truncate">{todo.text}</span>
                         </div>
                       );
                     })}

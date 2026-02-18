@@ -177,6 +177,7 @@ export default function App() {
             lessonSchedules={lessonSchedules}
             settings={settings}
             todos={todos}
+            onUpdateTodos={handleUpdateTodos}
             onNavigate={setCurrentView}
           />
         ) : currentView === 'week' ? (
