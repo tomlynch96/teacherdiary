@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Home,
   Calendar,
   BookOpen,
   Printer,
@@ -15,6 +16,7 @@ import {
 // Navigation sidebar with the warm professional design.
 
 const NAV_ITEMS = [
+  { id: 'home', label: 'Home', icon: Home, active: true },
   { id: 'week', label: 'Week View', icon: Calendar, active: true },
   { id: 'class', label: 'Class View', icon: BookOpen, active: true },
   { id: 'todos', label: 'To-Do List', icon: CheckSquare, active: true },
