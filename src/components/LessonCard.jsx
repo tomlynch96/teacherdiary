@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Users, MapPin } from 'lucide-react';
+import { Clock, Users, MapPin, ClipboardCheck, Printer } from 'lucide-react';
 
 // Height breakpoints for adaptive layout
 const TALL_THRESHOLD = 120;
@@ -35,6 +35,26 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
   // Format periods display
   const periodsDisplay = lesson.periods?.join('–') || lesson.period || '';
 
+  // Status flags
+  const isPlanned = instanceData?.fullyPlanned === true;
+  const isPrinted = instanceData?.allPrinted === true;
+
+  // Status icons component — reused across layouts
+  const StatusIcons = ({ size = 11, className: extraClass = '' }) => (
+    <div className={`flex items-center gap-0.5 shrink-0 ${extraClass}`}>
+      <ClipboardCheck
+        size={size}
+        className={isPlanned ? 'text-sage' : 'text-navy/15'}
+        strokeWidth={isPlanned ? 2.5 : 1.5}
+      />
+      <Printer
+        size={size}
+        className={isPrinted ? 'text-sage' : 'text-navy/15'}
+        strokeWidth={isPrinted ? 2.5 : 1.5}
+      />
+    </div>
+  );
+
   return (
     <div 
       className="relative h-full"
@@ -62,9 +82,12 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                   <h3 className="font-serif font-bold text-navy text-sm leading-tight flex-1" style={{ color: accent }}>
                     {className}
                   </h3>
-                  {hasData && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0 mt-1" title="Has lesson content" />
-                  )}
+                  <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                    <StatusIcons size={12} />
+                    {hasData && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0" title="Has lesson content" />
+                    )}
+                  </div>
                 </div>
                 
                 {subject && (
@@ -112,9 +135,12 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                 <h3 className="font-serif font-bold text-navy text-sm leading-tight" style={{ color: accent }}>
                   {className}
                 </h3>
-                {hasData && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0 mt-1" />
-                )}
+                <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                  <StatusIcons size={11} />
+                  {hasData && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0" />
+                  )}
+                </div>
               </div>
 
               {instanceData?.title && (
@@ -147,6 +173,7 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
                 <h3 className="font-serif font-bold text-xs text-navy truncate" style={{ color: accent }}>
                   {className}
                 </h3>
+                <StatusIcons size={10} />
                 {hasData && (
                   <div className="w-1.5 h-1.5 rounded-full bg-sage shrink-0" />
                 )}
@@ -165,9 +192,23 @@ export default function LessonCard({ lesson, height, accent, hasData, onClick, s
         <div className="absolute left-full ml-2 top-0 z-50 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-4 pointer-events-none">
           <div className="space-y-3">
             <div>
-              <h4 className="font-serif font-bold text-navy text-base mb-1" style={{ color: accent }}>
-                {className}
-              </h4>
+              <div className="flex items-start justify-between gap-2">
+                <h4 className="font-serif font-bold text-navy text-base mb-1" style={{ color: accent }}>
+                  {className}
+                </h4>
+                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                  <ClipboardCheck
+                    size={14}
+                    className={isPlanned ? 'text-sage' : 'text-navy/20'}
+                    strokeWidth={isPlanned ? 2.5 : 1.5}
+                  />
+                  <Printer
+                    size={14}
+                    className={isPrinted ? 'text-sage' : 'text-navy/20'}
+                    strokeWidth={isPrinted ? 2.5 : 1.5}
+                  />
+                </div>
+              </div>
               {subject && (
                 <p className="text-sm text-navy/50 font-medium">{subject}</p>
               )}

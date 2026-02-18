@@ -104,6 +104,8 @@ export function addLessonToSequence(classId, data = {}) {
     topicId: data.topicId || null,
     topicName: data.topicName || null,
     linkedSourceId: data.linkedSourceId || null,
+    fullyPlanned: data.fullyPlanned || false,
+    allPrinted: data.allPrinted || false,
   };
   all[classId] = [...seq, newLesson];
   setLessonSequences(all);
@@ -304,6 +306,8 @@ export function copyTopicToClass(sourceClassId, topicId, targetClassId, linked =
     topicId: newTopicId,
     topicName: lesson.topicName,
     linkedSourceId: linked ? `${sourceClassId}::${lesson.id}` : null,
+    fullyPlanned: false,
+    allPrinted: false,
   }));
 
   all[targetClassId] = [...targetSeq, ...newLessons];
@@ -351,6 +355,8 @@ export function addLessonToLinkedTopic(classId, topicId, topicName, data = {}) {
     topicId: topicId,
     topicName: topicName,
     linkedSourceId: null,
+    fullyPlanned: false,
+    allPrinted: false,
   };
 
   all[classId] = [...updatedSeq, newLesson];

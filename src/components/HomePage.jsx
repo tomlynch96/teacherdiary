@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,6 +15,9 @@ import {
   FolderOpen,
   CheckSquare,
   Check,
+  ClipboardCheck,
+  Printer,
+  PartyPopper,
 } from 'lucide-react';
 import {
   getWeekDays,
@@ -41,10 +44,7 @@ import {
   getHolidayNameForDate,
 } from '../utils/storage';
 
-// ===== HomePage =====
-// Daily briefing view. Shows a warm greeting and the day's lessons as
-// hoverable pills with an info panel that appears on hover.
-// Uses prediction zones so the user can move from pill to panel without flickering.
+// ===== Helper Functions =====
 
 function getGreetingPhrase() {
   const hour = new Date().getHours();
@@ -95,6 +95,35 @@ function formatMinutes(totalMins) {
   return h + ':' + String(m).padStart(2, '0');
 }
 
+function getLessonReadiness(lessons, timetableData, lessonSequences, lessonSchedules) {
+  // lessons = array of merged lesson objects for a day
+  if (!lessons || lessons.length === 0) {
+    return { totalLessons: 0, plannedCount: 0, printedCount: 0, allPlanned: true, allPrinted: true, allReady: true };
+  }
+
+  let plannedCount = 0;
+  let printedCount = 0;
+
+  for (const lesson of lessons) {
+    const dateStr = formatDateISO(lesson.date || new Date());
+    const occNum = getOccurrenceForDate(lesson.classId, dateStr, lesson.startTime, timetableData);
+    if (occNum !== null) {
+      const content = getLessonForOccurrence(lesson.classId, occNum);
+      if (content?.fullyPlanned) plannedCount++;
+      if (content?.allPrinted) printedCount++;
+    }
+  }
+
+  return {
+    totalLessons: lessons.length,
+    plannedCount,
+    printedCount,
+    allPlanned: plannedCount === lessons.length,
+    allPrinted: printedCount === lessons.length,
+    allReady: plannedCount === lessons.length && printedCount === lessons.length,
+  };
+}
+
 // --- Main component ---
 
 export default function HomePage({
@@ -109,6 +138,7 @@ export default function HomePage({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [hoveredLesson, setHoveredLesson] = useState(null);
   const [isDismissing, setIsDismissing] = useState(false);
+  const [readyBannerVisible, setReadyBannerVisible] = useState(true);
 
   // Hover management refs
   const hoverTimeoutRef = useRef(null);
@@ -180,15 +210,69 @@ export default function HomePage({
   }, [timetableData, weekDays]);
 
   var todayLessons = useMemo(function () {
-    var raw = weekLessons[currentDayOfWeek] || [];
+    var raw = (weekLessons[currentDayOfWeek] || []).map(function(l) {
+      return Object.assign({}, l, { date: currentDate });
+    });
     return mergeConsecutiveLessons(raw);
-  }, [weekLessons, currentDayOfWeek]);
+  }, [weekLessons, currentDayOfWeek, currentDate]);
 
   var todayDuties = useMemo(function () {
     return (weekDuties[currentDayOfWeek] || []).sort(function (a, b) {
       return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
     });
   }, [weekDuties, currentDayOfWeek]);
+
+  // Readiness computations
+  var todayReadiness = useMemo(function () {
+    return getLessonReadiness(todayLessons, timetableData, lessonSequences, lessonSchedules);
+  }, [todayLessons, timetableData, lessonSequences, lessonSchedules]);
+
+  var tomorrowReadiness = useMemo(function () {
+    var tomorrow = new Date(currentDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    while (tomorrow.getDay() === 0 || tomorrow.getDay() === 6) {
+      tomorrow.setDate(tomorrow.getDate() + 1);
+    }
+    var tomorrowWeekDays = getWeekDays(tomorrow);
+    var tomorrowDOW = tomorrow.getDay() === 0 ? 7 : tomorrow.getDay();
+    var tomorrowLessons = getLessonsForWeek(timetableData, tomorrowWeekDays, null);
+    var tomorrowDayLessons = (tomorrowLessons[tomorrowDOW] || [])
+      .map(function (l) { return Object.assign({}, l, { date: tomorrow }); });
+    var merged = mergeConsecutiveLessons(tomorrowDayLessons);
+    return getLessonReadiness(merged, timetableData, lessonSequences, lessonSchedules);
+  }, [currentDate, timetableData, lessonSequences, lessonSchedules]);
+
+  var weekReadiness = useMemo(function () {
+    var allPlanned = true;
+    var allPrinted = true;
+    var totalLessons = 0;
+
+    for (var i = 0; i < weekDays.length; i++) {
+      var wd = weekDays[i];
+      if (wd.getDay() === 0 || wd.getDay() === 6) continue;
+      var dow = wd.getDay();
+      var lessons = getLessonsForWeek(timetableData, weekDays, null);
+      var dayL = (lessons[dow] || []).map(function (l) { return Object.assign({}, l, { date: wd }); });
+      var merged = mergeConsecutiveLessons(dayL);
+      var r = getLessonReadiness(merged, timetableData, lessonSequences, lessonSchedules);
+      totalLessons += r.totalLessons;
+      if (!r.allPlanned) allPlanned = false;
+      if (!r.allPrinted) allPrinted = false;
+    }
+
+    return { allPlanned, allPrinted, allReady: allPlanned && allPrinted, totalLessons };
+  }, [weekDays, timetableData, lessonSequences, lessonSchedules]);
+
+  useEffect(function () {
+    if (todayReadiness.allReady && todayReadiness.totalLessons > 0) {
+      var timer = setTimeout(function () {
+        setReadyBannerVisible(false);
+      }, 5000);
+      return function () { clearTimeout(timer); };
+    } else {
+      setReadyBannerVisible(true);
+    }
+  }, [todayReadiness.allReady, todayReadiness.totalLessons, currentDate]);
 
   var holidayName = useMemo(function () {
     return getHolidayNameForDate(formatDateISO(currentDate));
@@ -208,6 +292,7 @@ export default function HomePage({
         classInfo: classInfo,
         sequenceLesson: seqLesson,
         occurrenceNum: occNum,
+        content: seqLesson // Attaching content for status icons
       });
     });
   }, [todayLessons, currentDate, timetableData, lessonSequences, lessonSchedules]);
@@ -226,14 +311,12 @@ export default function HomePage({
         unscheduled.push(t);
       }
     });
-    // Group scheduled tasks by their time slot
     var slotGroups = {};
     scheduled.forEach(function (t) {
       var key = t.scheduledSlot.startMinutes + '-' + t.scheduledSlot.endMinutes;
       if (!slotGroups[key]) slotGroups[key] = [];
       slotGroups[key].push(t);
     });
-    // Sort within each group: incomplete first by stackOrder, completed at end
     Object.keys(slotGroups).forEach(function (key) {
       slotGroups[key].sort(function (a, b) {
         if (a.completed && !b.completed) return 1;
@@ -247,7 +330,6 @@ export default function HomePage({
   var slotGroups = scheduledAndUnscheduled.slotGroups;
   var unscheduledTodos = scheduledAndUnscheduled.unscheduledTodos;
 
-  // Toggle task completion
   var handleToggleTask = useCallback(function (taskId) {
     if (!onUpdateTodos) return;
     var updatedTodos = (todos || []).map(function (t) {
@@ -351,24 +433,65 @@ export default function HomePage({
           </p>
         </div>
 
-        {/* Holiday notice */}
-        {holidayName && (
-          <div className="mb-8 ml-[34px] px-5 py-4 rounded-2xl bg-[#F2CC8F]/15 border border-[#F2CC8F]/20">
-            <p className="font-serif text-lg text-navy/70">{'\uD83C\uDFD6\uFE0F'} {holidayName}</p>
-            <p className="text-sm text-navy/40 mt-1">Enjoy the break!</p>
-          </div>
-        )}
+        <div className="ml-[34px]">
+          {/* Readiness banner */}
+          {todayReadiness.totalLessons > 0 && !holidayName && (
+            todayReadiness.allReady ? (
+              <div
+                className="mb-4 transition-all duration-1000 ease-out"
+                style={{
+                  opacity: readyBannerVisible ? 1 : 0,
+                  maxHeight: readyBannerVisible ? '60px' : '0px',
+                  overflow: 'hidden',
+                }}
+              >
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sage/10 border border-sage/20">
+                  <ClipboardCheck size={15} className="text-sage" strokeWidth={2.5} />
+                  <Printer size={15} className="text-sage" strokeWidth={2.5} />
+                  <span className="text-xs font-semibold text-sage">All planned and printed for today</span>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-terracotta/8 border border-terracotta/15">
+                  {!todayReadiness.allPlanned && (
+                    <div className="flex items-center gap-1.5">
+                      <ClipboardCheck size={14} className="text-terracotta/60" strokeWidth={1.5} />
+                      <span className="text-xs font-medium text-terracotta/70">
+                        {todayReadiness.totalLessons - todayReadiness.plannedCount} lesson{todayReadiness.totalLessons - todayReadiness.plannedCount !== 1 ? 's' : ''} not yet planned
+                      </span>
+                    </div>
+                  )}
+                  {!todayReadiness.allPrinted && (
+                    <div className="flex items-center gap-1.5">
+                      <Printer size={14} className="text-terracotta/60" strokeWidth={1.5} />
+                      <span className="text-xs font-medium text-terracotta/70">
+                        {todayReadiness.totalLessons - todayReadiness.printedCount} lesson{todayReadiness.totalLessons - todayReadiness.printedCount !== 1 ? 's' : ''} not yet printed
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          )}
 
-        {/* Encouraging message */}
-        {!holidayName && (
-          <p className="text-sm text-navy/30 ml-[34px] mb-8 italic">
-            {getEncouragingMessage(enrichedLessons.length, todayDuties.length)}
-          </p>
-        )}
+          {/* Holiday notice */}
+          {holidayName && (
+            <div className="mb-8 px-5 py-4 rounded-2xl bg-[#F2CC8F]/15 border border-[#F2CC8F]/20">
+              <p className="font-serif text-lg text-navy/70">{'\uD83C\uDFD6\uFE0F'} {holidayName}</p>
+              <p className="text-sm text-navy/40 mt-1">Enjoy the break!</p>
+            </div>
+          )}
 
-        {/* Lessons + Info layout */}
-        {!holidayName && (
-          <div className="ml-[34px]">
+          {/* Encouraging message */}
+          {!holidayName && (
+            <p className="text-sm text-navy/30 mb-8 italic">
+              {getEncouragingMessage(enrichedLessons.length, todayDuties.length)}
+            </p>
+          )}
+
+          {/* Lessons + Info layout */}
+          {!holidayName && (
             <div className="flex gap-0">
               {/* LEFT column: pills */}
               <div className="flex flex-col gap-3 w-72 shrink-0">
@@ -410,7 +533,6 @@ export default function HomePage({
                         className="rounded-2xl border border-[#81B29A]/15 bg-[#81B29A]/5 transition-all duration-300 ease-out origin-left overflow-hidden"
                         style={{ width: isInactive ? '60%' : '100%', opacity: isInactive ? 0.45 : 1 }}
                       >
-                        {/* Slot header */}
                         <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
                           <div className="flex items-center gap-2">
                             <CheckSquare size={13} className="text-sage/50" />
@@ -421,7 +543,6 @@ export default function HomePage({
                             {completed > 0 && <span className="text-sage/60">{completed} done</span>}
                           </div>
                         </div>
-                        {/* Task list */}
                         <div className="px-2 pb-2 space-y-1">
                           {tasks.map(function (task) {
                             return (
@@ -447,7 +568,6 @@ export default function HomePage({
                     );
                   }
 
-                  // type === 'lesson'
                   var lesson = item.data;
                   var isHovered = hoveredLesson === idx;
 
@@ -486,12 +606,21 @@ export default function HomePage({
                             </p>
                           )}
                         </div>
-                        {!isInactive && lesson.sequenceLesson && lesson.sequenceLesson.title && (
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lesson.color }} title="Lesson planned" />
-                        )}
+                        
+                        <div className="flex items-center gap-1 shrink-0 ml-auto">
+                          <ClipboardCheck
+                            size={13}
+                            className={lesson.content?.fullyPlanned ? 'text-sage' : 'text-navy/15'}
+                            strokeWidth={lesson.content?.fullyPlanned ? 2.5 : 1.5}
+                          />
+                          <Printer
+                            size={13}
+                            className={lesson.content?.allPrinted ? 'text-sage' : 'text-navy/15'}
+                            strokeWidth={lesson.content?.allPrinted ? 2.5 : 1.5}
+                          />
+                        </div>
                       </div>
 
-                      {/* Prediction bridge */}
                       {isHovered && (
                         <div className="absolute top-0 bottom-0 left-full" style={{ width: 'calc(100vw - 100%)' }} />
                       )}
@@ -499,7 +628,6 @@ export default function HomePage({
                   );
                 })}
 
-                {/* Unscheduled tasks */}
                 {unscheduledTodos.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs font-semibold text-navy/25 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -544,8 +672,31 @@ export default function HomePage({
                 )}
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Tomorrow / week readiness — bottom of page */}
+          {todayReadiness.totalLessons > 0 && !holidayName && (
+            <div className="mt-12 space-y-2 w-72">
+              {tomorrowReadiness.totalLessons > 0 && tomorrowReadiness.allReady && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sage/5 border border-sage/10">
+                  <span className="text-sm">✨</span>
+                  <span className="text-xs font-medium text-sage/80">
+                    Tomorrow is fully planned and printed too — you're ahead of the game!
+                  </span>
+                </div>
+              )}
+
+              {weekReadiness.totalLessons > 0 && weekReadiness.allReady && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-sage/8 to-[#81B29A]/5 border border-sage/15">
+                  <span className="text-sm">🌟</span>
+                  <span className="text-xs font-semibold text-sage">
+                    The entire week is planned and printed — incredible work! Enjoy teaching without the prep stress.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -561,7 +712,6 @@ function InfoPanel({ lesson, timetableData, isDismissing }) {
   return (
     <div className={isDismissing ? 'info-panel-dismiss' : 'info-panel-appear'}>
       <div className="rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm">
-        {/* Header bar */}
         <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: lesson.color + '0D' }}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-serif text-sm font-bold" style={{ color: lesson.color }}>{lesson.className}</span>
@@ -585,7 +735,6 @@ function InfoPanel({ lesson, timetableData, isDismissing }) {
           </div>
         </div>
 
-        {/* Body */}
         <div className="px-5 py-4">
           {hasContent ? (
             <div className="space-y-4">
