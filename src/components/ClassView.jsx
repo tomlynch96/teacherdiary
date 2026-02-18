@@ -299,8 +299,21 @@ function CopyTopicModal({ topicName, topicId, sourceClassId, classes, onCopy, on
 
 // --- Topic Assignment Popover ---
 
-function TopicAssignPopover({ lesson, classSequence, accent, onAssign, onClose }) {
+function TopicAssignPopover({ lesson, classSequence, accent, onAssign, onClose, triggerRef }) {
   const [newTopicName, setNewTopicName] = useState('');
+  const popoverRef = React.useRef(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  // Position the popover near the trigger button
+  React.useEffect(() => {
+    if (triggerRef?.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + 4,
+        left: Math.min(rect.right - 256, window.innerWidth - 272), // 256 = popover width, keep on screen
+      });
+    }
+  }, [triggerRef]);
 
   // Get existing topics from the class sequence
   const existingTopics = useMemo(() => {
@@ -331,48 +344,57 @@ function TopicAssignPopover({ lesson, classSequence, accent, onAssign, onClose }
   };
 
   return (
-    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white rounded-xl border border-slate-200 shadow-lg p-3 space-y-2"
-      onClick={(e) => e.stopPropagation()}>
-      <p className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider">Assign to topic</p>
+    <>
+      {/* Invisible backdrop to close on outside click */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      {/* Existing topics */}
-      {existingTopics.length > 0 && (
-        <div className="space-y-1">
-          {existingTopics.map(t => (
-            <button key={t.id} onClick={() => handleAssignExisting(t.id, t.name)}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-smooth
-                ${lesson.topicId === t.id ? 'bg-sage/10 text-sage font-semibold' : 'text-navy/60 hover:bg-sand'}`}>
-              <FolderOpen size={12} />
-              {t.name}
-              {lesson.topicId === t.id && <Check size={12} className="ml-auto" />}
+      {/* Popover */}
+      <div ref={popoverRef}
+        className="fixed z-50 w-64 bg-white rounded-xl border border-slate-200 shadow-xl p-3 space-y-2"
+        style={{ top: position.top, left: position.left }}
+        onClick={(e) => e.stopPropagation()}>
+        <p className="text-[10px] font-semibold text-navy/30 uppercase tracking-wider">Assign to topic</p>
+
+        {/* Existing topics */}
+        {existingTopics.length > 0 && (
+          <div className="space-y-1">
+            {existingTopics.map(t => (
+              <button key={t.id} onClick={() => handleAssignExisting(t.id, t.name)}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-smooth
+                  ${lesson.topicId === t.id ? 'bg-sage/10 text-sage font-semibold' : 'text-navy/60 hover:bg-sand'}`}>
+                <FolderOpen size={12} />
+                {t.name}
+                {lesson.topicId === t.id && <Check size={12} className="ml-auto" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Create new */}
+        <div className="border-t border-slate-100 pt-2">
+          <div className="flex gap-1.5">
+            <input value={newTopicName} onChange={(e) => setNewTopicName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateNew(); }}
+              placeholder="New topic name..."
+              autoFocus
+              className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs text-navy
+                         placeholder:text-navy/20 focus:outline-none focus:border-sage" />
+            <button onClick={handleCreateNew}
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-sage text-white hover:bg-sage/90">
+              Add
             </button>
-          ))}
+          </div>
         </div>
-      )}
 
-      {/* Create new */}
-      <div className="border-t border-slate-100 pt-2">
-        <div className="flex gap-1.5">
-          <input value={newTopicName} onChange={(e) => setNewTopicName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateNew(); }}
-            placeholder="New topic name..."
-            className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs text-navy
-                       placeholder:text-navy/20 focus:outline-none focus:border-sage" />
-          <button onClick={handleCreateNew}
-            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-sage text-white hover:bg-sage/90">
-            Add
+        {/* Remove from topic */}
+        {lesson.topicId && (
+          <button onClick={handleRemove}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-terracotta/60 hover:text-terracotta hover:bg-terracotta/5 transition-smooth">
+            <X size={12} /> Remove from topic
           </button>
-        </div>
+        )}
       </div>
-
-      {/* Remove from topic */}
-      {lesson.topicId && (
-        <button onClick={handleRemove}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-terracotta/60 hover:text-terracotta hover:bg-terracotta/5 transition-smooth">
-          <X size={12} /> Remove from topic
-        </button>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -405,6 +427,7 @@ function LessonSequenceRow({
   const [expanded, setExpanded] = useState(false);
   const [showTopicPopover, setShowTopicPopover] = useState(false);
   const dateInputRef = React.useRef(null);
+  const tagButtonRef = React.useRef(null);
 
   React.useEffect(() => {
     setTitle(lesson.title || '');
@@ -441,7 +464,7 @@ function LessonSequenceRow({
       onDragStart={(e) => onDragStart(e, index)}
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={(e) => onDrop(e, index)}
-      className={`border border-slate-100 rounded-2xl bg-white overflow-hidden transition-smooth hover:border-slate-200
+      className={`border border-slate-100 rounded-2xl bg-white transition-smooth hover:border-slate-200
         ${isDragging ? 'opacity-40 scale-95' : ''}
         ${insideTopic ? 'ml-6' : ''}`}
     >
@@ -480,6 +503,30 @@ function LessonSequenceRow({
           </span>
         )}
 
+        {/* Topic assign button — always visible */}
+        <div className="shrink-0">
+          <button
+            ref={tagButtonRef}
+            onClick={(e) => { e.stopPropagation(); setShowTopicPopover(!showTopicPopover); }}
+            className={`p-1.5 rounded-lg transition-smooth ${lesson.topicId
+              ? 'text-sage/50 hover:text-sage hover:bg-sage/5'
+              : 'text-navy/15 hover:text-navy/30 hover:bg-sand'}`}
+            title="Assign to topic"
+          >
+            <Tag size={14} />
+          </button>
+          {showTopicPopover && (
+            <TopicAssignPopover
+              lesson={lesson}
+              classSequence={classSequence}
+              accent={accent}
+              onAssign={onAssignTopic}
+              onClose={() => setShowTopicPopover(false)}
+              triggerRef={tagButtonRef}
+            />
+          )}
+        </div>
+
         {/* Scheduled date + time pill + sync button */}
         <div className="flex items-center gap-1.5 shrink-0">
           {scheduledOccurrence ? (
@@ -516,28 +563,6 @@ function LessonSequenceRow({
               }
             }}
           />
-        </div>
-
-        {/* Topic assign button */}
-        <div className="relative shrink-0">
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowTopicPopover(!showTopicPopover); }}
-            className={`p-1 rounded-lg transition-smooth ${lesson.topicId
-              ? 'text-sage/50 hover:text-sage hover:bg-sage/5'
-              : 'text-navy/15 hover:text-navy/30 hover:bg-sand'}`}
-            title="Assign to topic"
-          >
-            <Tag size={14} />
-          </button>
-          {showTopicPopover && (
-            <TopicAssignPopover
-              lesson={lesson}
-              classSequence={classSequence}
-              accent={accent}
-              onAssign={onAssignTopic}
-              onClose={() => setShowTopicPopover(false)}
-            />
-          )}
         </div>
 
         {/* Content indicator */}
@@ -688,6 +713,7 @@ export default function ClassView({
   onRenameTopic,
   onRemoveTopic,
   onUnlinkLesson,
+  onAddLessonToTopic,
 }) {
   const [selectedClassId, setSelectedClassId] = useState(null);
   const [editingField, setEditingField] = useState(null);
@@ -781,6 +807,12 @@ export default function ClassView({
   const handleAssignTopic = (lessonId, topicId, topicName) => {
     if (!selectedClass) return;
     onUpdateLesson(selectedClass.id, lessonId, { topicId, topicName });
+  };
+
+  // Handle adding a new lesson inside a topic (auto-assigns topic, propagates to linked classes)
+  const handleAddLessonToTopic = (topicId, topicName) => {
+    if (!selectedClass) return;
+    onAddLessonToTopic(selectedClass.id, topicId, topicName, {});
   };
 
   // Handle unlinking a lesson
@@ -1111,6 +1143,20 @@ export default function ClassView({
                                 />
                               );
                             })}
+                            {/* Add lesson to this topic */}
+                            {!isCollapsed && (
+                              <button
+                                onClick={() => handleAddLessonToTopic(group.topicId, group.topicName)}
+                                className="ml-6 w-[calc(100%-1.5rem)] flex items-center justify-center gap-2 py-2 rounded-xl
+                                           border border-dashed border-slate-200
+                                           text-xs font-medium text-navy/25
+                                           hover:text-sage hover:border-sage/30 hover:bg-[#81B29A]/5
+                                           transition-smooth"
+                              >
+                                <Plus size={14} />
+                                Add lesson to {group.topicName}
+                              </button>
+                            )}
                           </div>
                         );
                       } else {

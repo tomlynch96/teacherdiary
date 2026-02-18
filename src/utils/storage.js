@@ -312,6 +312,109 @@ export function copyTopicToClass(sourceClassId, topicId, targetClassId, linked =
 }
 
 /**
+ * Add a lesson to a topic, and if that topic has linked copies in other classes,
+ * automatically create linked copies there too.
+ *
+ * @param {string} classId - class to add the lesson to
+ * @param {string} topicId - topic to add the lesson into
+ * @param {string} topicName - display name of the topic
+ * @param {object} data - lesson data (title, notes, links, etc.)
+ * @returns {object} the new lesson object
+ */
+export function addLessonToLinkedTopic(classId, topicId, topicName, data = {}) {
+  const all = getLessonSequences();
+
+  // 1. Add the lesson to the source class, positioned after the last lesson in this topic
+  const seq = all[classId] || [];
+  const topicLessons = seq.filter(l => l.topicId === topicId).sort((a, b) => a.order - b.order);
+  
+  // Find the insertion point: right after the last lesson in this topic
+  let insertAfterOrder;
+  if (topicLessons.length > 0) {
+    insertAfterOrder = topicLessons[topicLessons.length - 1].order;
+  } else {
+    // Topic has no lessons yet (shouldn't normally happen), append at end
+    insertAfterOrder = seq.length > 0 ? Math.max(...seq.map(l => l.order)) : -1;
+  }
+
+  // Shift all lessons after the insertion point up by 1
+  const updatedSeq = seq.map(l => 
+    l.order > insertAfterOrder ? { ...l, order: l.order + 1 } : l
+  );
+
+  const newLesson = {
+    id: `${classId}-lesson-${Date.now()}`,
+    title: data.title || '',
+    notes: data.notes || '',
+    links: data.links || [],
+    order: insertAfterOrder + 1,
+    topicId: topicId,
+    topicName: topicName,
+    linkedSourceId: null,
+  };
+
+  all[classId] = [...updatedSeq, newLesson];
+
+  // 2. Check if any lessons in this topic have linked copies elsewhere,
+  //    which means this topic was copied as linked to other classes.
+  //    Find all classes that have lessons linked to lessons in this topic.
+  const sourceTopicLessonIds = new Set(
+    [...topicLessons, newLesson].map(l => `${classId}::${l.id}`)
+  );
+
+  // Find classes that have linked copies of lessons in this topic
+  const linkedClassesMap = new Map(); // classId -> topicId used in that class
+  for (const cId of Object.keys(all)) {
+    if (cId === classId) continue;
+    for (const l of (all[cId] || [])) {
+      if (l.linkedSourceId) {
+        const [srcClassId] = l.linkedSourceId.split('::');
+        if (srcClassId === classId && l.topicId) {
+          // Check if the source lesson is in our topic
+          const srcLesson = (all[classId] || []).find(sl => `${classId}::${sl.id}` === l.linkedSourceId);
+          if (srcLesson && srcLesson.topicId === topicId) {
+            linkedClassesMap.set(cId, l.topicId);
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Create linked copies in each linked class
+  for (const [targetClassId, targetTopicId] of linkedClassesMap) {
+    const targetSeq = all[targetClassId] || [];
+    const targetTopicLessons = targetSeq.filter(l => l.topicId === targetTopicId).sort((a, b) => a.order - b.order);
+    
+    let targetInsertAfterOrder;
+    if (targetTopicLessons.length > 0) {
+      targetInsertAfterOrder = targetTopicLessons[targetTopicLessons.length - 1].order;
+    } else {
+      targetInsertAfterOrder = targetSeq.length > 0 ? Math.max(...targetSeq.map(l => l.order)) : -1;
+    }
+
+    const updatedTargetSeq = targetSeq.map(l =>
+      l.order > targetInsertAfterOrder ? { ...l, order: l.order + 1 } : l
+    );
+
+    const linkedCopy = {
+      id: `${targetClassId}-lesson-${Date.now()}-linked`,
+      title: data.title || '',
+      notes: data.notes || '',
+      links: data.links ? JSON.parse(JSON.stringify(data.links)) : [],
+      order: targetInsertAfterOrder + 1,
+      topicId: targetTopicId,
+      topicName: topicName,
+      linkedSourceId: `${classId}::${newLesson.id}`,
+    };
+
+    all[targetClassId] = [...updatedTargetSeq, linkedCopy];
+  }
+
+  setLessonSequences(all);
+  return newLesson;
+}
+
+/**
  * Check if a lesson has linked copies anywhere.
  * Returns true if any lesson in any class has linkedSourceId pointing to this lesson.
  */

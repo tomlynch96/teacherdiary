@@ -29,6 +29,7 @@ import {
   renameTopic,
   removeTopic,
   unlinkLesson,
+  addLessonToLinkedTopic,
 } from './utils/storage';
 
 // ===== App =====
@@ -170,6 +171,12 @@ export default function App() {
     setLessonSequencesState(getLessonSequences());
   };
 
+  // Add a lesson inside a topic — auto-propagates to linked classes
+  const handleAddLessonToTopic = (classId, topicId, topicName, data) => {
+    addLessonToLinkedTopic(classId, topicId, topicName, data);
+    setLessonSequencesState(getLessonSequences());
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-cream">
@@ -216,6 +223,7 @@ export default function App() {
             onRenameTopic={handleRenameTopic}
             onRemoveTopic={handleRemoveTopic}
             onUnlinkLesson={handleUnlinkLesson}
+            onAddLessonToTopic={handleAddLessonToTopic}
           />
         ) : currentView === 'todos' ? (
           <ToDoView
