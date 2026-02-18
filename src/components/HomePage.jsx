@@ -45,8 +45,6 @@ import {
 // hoverable pills with an info panel that appears on hover.
 // Uses prediction zones so the user can move from pill to panel without flickering.
 
-// --- Greeting helpers ---
-
 function getGreetingPhrase() {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
@@ -64,26 +62,36 @@ function getGreetingIcon() {
 
 function getEncouragingMessage(lessonCount, dutyCount) {
   if (lessonCount === 0 && dutyCount === 0) {
-    return "Nothing on the timetable today — a perfect day to get ahead.";
+    return "Nothing on the timetable today \u2014 a perfect day to get ahead.";
   }
   if (lessonCount <= 2) {
     return "A light day ahead. Plenty of time to plan and breathe.";
   }
   if (lessonCount <= 4) {
-    return "A steady day ahead. You've got this.";
+    return "A steady day ahead. You\u2019ve got this.";
   }
-  return "A full day ahead — pace yourself and keep that energy up.";
+  return "A full day ahead \u2014 pace yourself and keep that energy up.";
 }
 
 function formatDayHeader(date) {
   const dayName = DAY_NAMES[date.getDay()];
   const day = date.getDate();
   const month = MONTH_NAMES[date.getMonth()];
-  const suffix = (day === 1 || day === 21 || day === 31) ? 'st'
-    : (day === 2 || day === 22) ? 'nd'
-    : (day === 3 || day === 23) ? 'rd'
-    : 'th';
-  return { dayName, dateStr: `${day}${suffix} ${month}` };
+  const suffix =
+    day === 1 || day === 21 || day === 31
+      ? 'st'
+      : day === 2 || day === 22
+        ? 'nd'
+        : day === 3 || day === 23
+          ? 'rd'
+          : 'th';
+  return { dayName, dateStr: day + suffix + ' ' + month };
+}
+
+function formatMinutes(totalMins) {
+  var h = Math.floor(totalMins / 60);
+  var m = totalMins % 60;
+  return h + ':' + String(m).padStart(2, '0');
 }
 
 // --- Main component ---
@@ -98,209 +106,203 @@ export default function HomePage({
 }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [hoveredLesson, setHoveredLesson] = useState(null);
-  
-  // Prediction zone: delayed unhover so the user can move to the info panel
-  // without it disappearing when crossing the gap between pill and panel.
+  const [isDismissing, setIsDismissing] = useState(false);
+
+  // Hover management refs
   const hoverTimeoutRef = useRef(null);
   const activeHoverRef = useRef(null);
+  const dismissRef = useRef(null);
 
-  const handlePillEnter = useCallback((idx) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    activeHoverRef.current = idx;
-    setHoveredLesson(idx);
-  }, []);
-
-  const handlePillLeave = useCallback(() => {
-    // Delay clearing — gives the user ~300ms to reach the info panel
-    hoverTimeoutRef.current = setTimeout(() => {
-      // Only clear if nothing else has claimed the hover
-      setHoveredLesson((current) => {
-        if (current === activeHoverRef.current) {
-          activeHoverRef.current = null;
-          return null;
-        }
-        return current;
-      });
-    }, 300);
-  }, []);
-
-  const handlePanelEnter = useCallback(() => {
-    // Mouse reached the info panel — cancel the timeout
+  var clearAllTimeouts = useCallback(function () {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
   }, []);
 
-  const handlePanelLeave = useCallback(() => {
-    // Left the panel — same delayed clear
-    hoverTimeoutRef.current = setTimeout(() => {
+  var dismiss = useCallback(function () {
+    clearAllTimeouts();
+    if (dismissRef.current) clearTimeout(dismissRef.current);
+    setIsDismissing(true);
+    dismissRef.current = setTimeout(function () {
       activeHoverRef.current = null;
       setHoveredLesson(null);
+      setIsDismissing(false);
+    }, 250);
+  }, [clearAllTimeouts]);
+
+  var handlePillEnter = useCallback(function (idx) {
+    clearAllTimeouts();
+    if (dismissRef.current) {
+      clearTimeout(dismissRef.current);
+      dismissRef.current = null;
+    }
+    setIsDismissing(false);
+    activeHoverRef.current = idx;
+    setHoveredLesson(idx);
+  }, [clearAllTimeouts]);
+
+  var handlePillLeave = useCallback(function () {
+    hoverTimeoutRef.current = setTimeout(function () {
+      dismiss();
+    }, 300);
+  }, [dismiss]);
+
+  var handlePanelEnter = useCallback(function () {
+    clearAllTimeouts();
+    if (dismissRef.current) {
+      clearTimeout(dismissRef.current);
+      dismissRef.current = null;
+    }
+    setIsDismissing(false);
+  }, [clearAllTimeouts]);
+
+  var handlePanelLeave = useCallback(function () {
+    clearAllTimeouts();
+    hoverTimeoutRef.current = setTimeout(function () {
+      dismiss();
     }, 200);
-  }, []);
+  }, [clearAllTimeouts, dismiss]);
 
-  // Get the Monday of the current week for lesson lookup
-  const monday = useMemo(() => getMonday(currentDate), [currentDate]);
-  const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
+  // Data computations
+  var monday = useMemo(function () { return getMonday(currentDate); }, [currentDate]);
+  var weekDays = useMemo(function () { return getWeekDays(currentDate); }, [currentDate]);
+  var currentDayOfWeek = currentDate.getDay() === 0 ? 7 : currentDate.getDay();
 
-  // Find the current day within the week
-  const currentDayOfWeek = currentDate.getDay() === 0 ? 7 : currentDate.getDay();
+  var weekLessons = useMemo(function () {
+    return getLessonsForWeek(timetableData, weekDays);
+  }, [timetableData, weekDays]);
 
-  // Get lessons and duties for the whole week, then extract just today
-  const weekLessons = useMemo(
-    () => getLessonsForWeek(timetableData, weekDays),
-    [timetableData, weekDays]
-  );
-  const weekDuties = useMemo(
-    () => getDutiesForWeek(timetableData, weekDays),
-    [timetableData, weekDays]
-  );
+  var weekDuties = useMemo(function () {
+    return getDutiesForWeek(timetableData, weekDays);
+  }, [timetableData, weekDays]);
 
-  // Get today's lessons (merged consecutive periods) and duties
-  const todayLessons = useMemo(() => {
-    const raw = weekLessons[currentDayOfWeek] || [];
+  var todayLessons = useMemo(function () {
+    var raw = weekLessons[currentDayOfWeek] || [];
     return mergeConsecutiveLessons(raw);
   }, [weekLessons, currentDayOfWeek]);
 
-  const todayDuties = useMemo(() => {
-    return (weekDuties[currentDayOfWeek] || []).sort(
-      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
-    );
+  var todayDuties = useMemo(function () {
+    return (weekDuties[currentDayOfWeek] || []).sort(function (a, b) {
+      return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    });
   }, [weekDuties, currentDayOfWeek]);
 
-  // Check if current date is a holiday
-  const holidayName = useMemo(() => {
+  var holidayName = useMemo(function () {
     return getHolidayNameForDate(formatDateISO(currentDate));
   }, [currentDate]);
 
-  // Map each lesson to its sequence content (title, notes, links, topic)
-  const enrichedLessons = useMemo(() => {
-    return todayLessons.map((lesson) => {
-      const dateISO = formatDateISO(currentDate);
-      const occNum = getOccurrenceForDate(lesson.classId, dateISO, lesson.startTime, timetableData);
-      const seqLesson = occNum !== null ? getLessonForOccurrence(lesson.classId, occNum) : null;
-      const classInfo = timetableData?.classes?.find((c) => c.id === lesson.classId);
-      const color = getClassColor(lesson.classId, timetableData?.classes || []);
-
-      return {
-        ...lesson,
-        color,
-        classInfo,
+  var enrichedLessons = useMemo(function () {
+    return todayLessons.map(function (lesson) {
+      var dateISO = formatDateISO(currentDate);
+      var occNum = getOccurrenceForDate(lesson.classId, dateISO, lesson.startTime, timetableData);
+      var seqLesson = occNum !== null ? getLessonForOccurrence(lesson.classId, occNum) : null;
+      var classInfo = timetableData && timetableData.classes
+        ? timetableData.classes.find(function (c) { return c.id === lesson.classId; })
+        : null;
+      var color = getClassColor(lesson.classId, (timetableData && timetableData.classes) || []);
+      return Object.assign({}, lesson, {
+        color: color,
+        classInfo: classInfo,
         sequenceLesson: seqLesson,
         occurrenceNum: occNum,
-      };
+      });
     });
   }, [todayLessons, currentDate, timetableData, lessonSequences, lessonSchedules]);
 
-  // Get todos scheduled for today
-  const todayTodos = useMemo(() => {
-    const dateISO = formatDateISO(currentDate);
-    return (todos || []).filter((t) => {
-      if (t.completed) return false;
-      if (!t.scheduledSlot) return false;
-      const slotDate = typeof t.scheduledSlot.date === 'string'
-        ? t.scheduledSlot.date.split('T')[0]
-        : formatDateISO(t.scheduledSlot.date);
-      return slotDate === dateISO;
+  var scheduledAndUnscheduled = useMemo(function () {
+    var dateISO = formatDateISO(currentDate);
+    var scheduled = [];
+    var unscheduled = [];
+    (todos || []).forEach(function (t) {
+      if (t.completed) return;
+      if (t.scheduledSlot) {
+        var slotDate = typeof t.scheduledSlot.date === 'string'
+          ? t.scheduledSlot.date.split('T')[0]
+          : formatDateISO(t.scheduledSlot.date);
+        if (slotDate === dateISO) scheduled.push(t);
+      } else {
+        unscheduled.push(t);
+      }
     });
+    return { scheduledTodos: scheduled, unscheduledTodos: unscheduled };
   }, [todos, currentDate]);
 
-  // Week number for two-week timetables
-  const weekNum = useMemo(() => {
-    if (!timetableData?.twoWeekTimetable) return null;
-    const anchor = timetableData.teacher?.exportDate;
+  var scheduledTodos = scheduledAndUnscheduled.scheduledTodos;
+  var unscheduledTodos = scheduledAndUnscheduled.unscheduledTodos;
+
+  var weekNum = useMemo(function () {
+    if (!timetableData || !timetableData.twoWeekTimetable) return null;
+    var anchor = timetableData.teacher && timetableData.teacher.exportDate;
     if (!anchor) return null;
-    const holidayMondays = getHolidayWeekMondays();
+    var holidayMondays = getHolidayWeekMondays();
     return getWeekNumber(currentDate, anchor, holidayMondays);
   }, [currentDate, timetableData]);
 
   // Navigation
-  const goToPrevDay = () => {
-    const prev = new Date(currentDate);
+  var goToPrevDay = function () {
+    var prev = new Date(currentDate);
     prev.setDate(prev.getDate() - 1);
-    // Skip weekends going backward
-    while (prev.getDay() === 0 || prev.getDay() === 6) {
-      prev.setDate(prev.getDate() - 1);
-    }
+    while (prev.getDay() === 0 || prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
     setCurrentDate(prev);
   };
 
-  const goToNextDay = () => {
-    const next = new Date(currentDate);
+  var goToNextDay = function () {
+    var next = new Date(currentDate);
     next.setDate(next.getDate() + 1);
-    // Skip weekends going forward
-    while (next.getDay() === 0 || next.getDay() === 6) {
-      next.setDate(next.getDate() + 1);
-    }
+    while (next.getDay() === 0 || next.getDay() === 6) next.setDate(next.getDate() + 1);
     setCurrentDate(next);
   };
 
-  const goToToday = () => {
-    const today = new Date();
-    // If weekend, go to next Monday
+  var goToToday = function () {
+    var today = new Date();
     if (today.getDay() === 0) today.setDate(today.getDate() + 1);
     if (today.getDay() === 6) today.setDate(today.getDate() + 2);
     setCurrentDate(today);
   };
 
-  const teacherName = timetableData?.teacher?.name || '';
-  const firstName = teacherName.replace(/^(Mr|Mrs|Ms|Miss|Dr|Prof)\s+/i, '').split(' ')[0] || teacherName;
-  const { dayName, dateStr } = formatDayHeader(currentDate);
-  const GreetingIcon = getGreetingIcon();
-  const isTodayDate = isToday(currentDate);
+  var teacherName = (timetableData && timetableData.teacher && timetableData.teacher.name) || '';
+  var firstName = teacherName.replace(/^(Mr|Mrs|Ms|Miss|Dr|Prof)\s+/i, '').split(' ')[0] || teacherName;
+  var dayHeader = formatDayHeader(currentDate);
+  var dayName = dayHeader.dayName;
+  var dateStr = dayHeader.dateStr;
+  var GreetingIcon = getGreetingIcon();
+  var isTodayDate = isToday(currentDate);
 
-  // All items sorted chronologically
-  const allItems = useMemo(() => {
-    const items = [];
-    enrichedLessons.forEach((l) => {
+  var allItems = useMemo(function () {
+    var items = [];
+    enrichedLessons.forEach(function (l) {
       items.push({ type: 'lesson', data: l, startMin: timeToMinutes(l.startTime) });
     });
-    todayDuties.forEach((d) => {
+    todayDuties.forEach(function (d) {
       items.push({ type: 'duty', data: d, startMin: timeToMinutes(d.startTime) });
     });
-    return items.sort((a, b) => a.startMin - b.startMin);
-  }, [enrichedLessons, todayDuties]);
+    scheduledTodos.forEach(function (t) {
+      items.push({ type: 'task', data: t, startMin: t.scheduledSlot.startMinutes });
+    });
+    return items.sort(function (a, b) { return a.startMin - b.startMin; });
+  }, [enrichedLessons, todayDuties, scheduledTodos]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-cream overflow-auto">
       {/* Day navigation */}
       <div className="shrink-0 flex items-center justify-between px-8 pt-6 pb-2">
         <div className="flex items-center gap-2">
-          <button
-            onClick={goToPrevDay}
-            className="p-2 rounded-xl text-navy/25 hover:text-navy/50 hover:bg-sand transition-smooth"
-          >
+          <button onClick={goToPrevDay} className="p-2 rounded-xl text-navy/25 hover:text-navy/50 hover:bg-sand transition-smooth">
             <ChevronLeft size={20} />
           </button>
           <button
             onClick={goToToday}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-smooth ${
-              isTodayDate
-                ? 'bg-[#81B29A]/10 text-sage'
-                : 'text-navy/30 hover:text-navy/50 hover:bg-sand'
-            }`}
+            className={'px-4 py-1.5 rounded-full text-sm font-medium transition-smooth ' + (isTodayDate ? 'bg-[#81B29A]/10 text-sage' : 'text-navy/30 hover:text-navy/50 hover:bg-sand')}
           >
             Today
           </button>
-          <button
-            onClick={goToNextDay}
-            className="p-2 rounded-xl text-navy/25 hover:text-navy/50 hover:bg-sand transition-smooth"
-          >
+          <button onClick={goToNextDay} className="p-2 rounded-xl text-navy/25 hover:text-navy/50 hover:bg-sand transition-smooth">
             <ChevronRight size={20} />
           </button>
         </div>
         {weekNum && (
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
-              weekNum === 1
-                ? 'bg-[#81B29A]/10 text-sage'
-                : 'bg-[#E07A5F]/10 text-terracotta'
-            }`}
-          >
+          <span className={'px-3 py-1 rounded-full text-xs font-bold tracking-wide ' + (weekNum === 1 ? 'bg-[#81B29A]/10 text-sage' : 'bg-[#E07A5F]/10 text-terracotta')}>
             Week {weekNum}
           </span>
         )}
@@ -318,18 +320,14 @@ export default function HomePage({
           </div>
           <p className="text-navy/40 text-lg ml-[34px]">
             Here's what your <span className="font-medium text-navy/60">{dayName}</span> looks like
-            {!isTodayDate && (
-              <span className="text-navy/30"> — {dateStr}</span>
-            )}
+            {!isTodayDate && <span className="text-navy/30"> &mdash; {dateStr}</span>}
           </p>
         </div>
 
         {/* Holiday notice */}
         {holidayName && (
           <div className="mb-8 ml-[34px] px-5 py-4 rounded-2xl bg-[#F2CC8F]/15 border border-[#F2CC8F]/20">
-            <p className="font-serif text-lg text-navy/70">
-              🏖️ {holidayName}
-            </p>
+            <p className="font-serif text-lg text-navy/70">{'\uD83C\uDFD6\uFE0F'} {holidayName}</p>
             <p className="text-sm text-navy/40 mt-1">Enjoy the break!</p>
           </div>
         )}
@@ -344,84 +342,77 @@ export default function HomePage({
         {/* Lessons + Info layout */}
         {!holidayName && (
           <div className="ml-[34px]">
-            {/* 
-              Prediction zone layout: each lesson is a full-width row.
-              The pill sits on the left, the info panel on the right.
-              Because the entire row belongs to one lesson, diagonal mouse 
-              movement from pill to panel never crosses another lesson's zone.
-            */}
             <div className="flex gap-0">
-              {/* LEFT column: pills + duties + tasks */}
+              {/* LEFT column: pills */}
               <div className="flex flex-col gap-3 w-72 shrink-0">
-                {allItems.length === 0 && (
+                {allItems.length === 0 && unscheduledTodos.length === 0 && (
                   <div className="py-8 text-center">
                     <Coffee size={32} className="mx-auto text-navy/15 mb-3" />
                     <p className="text-navy/30 text-sm">No lessons or duties today</p>
                   </div>
                 )}
 
-                {allItems.map((item, idx) => {
+                {allItems.map(function (item, idx) {
+                  var isInactive = hoveredLesson !== null && hoveredLesson !== idx;
+
                   if (item.type === 'duty') {
-                    const isInactive = hoveredLesson !== null && hoveredLesson !== idx;
                     return (
                       <div
-                        key={`duty-${idx}`}
+                        key={'duty-' + idx}
                         className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-sand/60 border border-sand transition-all duration-300 ease-out origin-left"
-                        style={{
-                          width: isInactive ? '60%' : '100%',
-                          opacity: isInactive ? 0.45 : 1,
-                        }}
+                        style={{ width: isInactive ? '60%' : '100%', opacity: isInactive ? 0.45 : 1 }}
                       >
                         <div className="w-1 h-8 rounded-full bg-navy/15 shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-navy/50 truncate">
-                            {item.data.activity}
-                          </p>
-                          <p className="text-xs text-navy/25">
-                            {formatTime(item.data.startTime)} – {formatTime(item.data.endTime)}
-                          </p>
+                          <p className="text-sm font-medium text-navy/50 truncate">{item.data.activity}</p>
+                          <p className="text-xs text-navy/25">{formatTime(item.data.startTime)} &ndash; {formatTime(item.data.endTime)}</p>
                         </div>
                       </div>
                     );
                   }
 
-                  const lesson = item.data;
-                  const isHovered = hoveredLesson === idx;
-                  const isInactive = hoveredLesson !== null && !isHovered;
+                  if (item.type === 'task') {
+                    var task = item.data;
+                    var slot = task.scheduledSlot;
+                    var timeStr = formatMinutes(slot.startMinutes) + ' \u2013 ' + formatMinutes(slot.endMinutes);
+                    return (
+                      <div
+                        key={'task-' + task.id}
+                        className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#81B29A]/5 border border-[#81B29A]/15 transition-all duration-300 ease-out origin-left"
+                        style={{ width: isInactive ? '60%' : '100%', opacity: isInactive ? 0.45 : 1 }}
+                      >
+                        <CheckSquare size={14} className="text-sage/50 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-navy/60 truncate">{task.text}</p>
+                          <p className="text-xs text-navy/25">{timeStr}</p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // type === 'lesson'
+                  var lesson = item.data;
+                  var isHovered = hoveredLesson === idx;
 
                   return (
                     <div
-                      key={`lesson-${idx}`}
+                      key={'lesson-' + idx}
                       className="relative transition-all duration-300 ease-out origin-left"
-                      style={{
-                        width: isInactive ? '60%' : '100%',
-                      }}
-                      onMouseEnter={() => handlePillEnter(idx)}
+                      style={{ width: isInactive ? '60%' : '100%' }}
+                      onMouseEnter={function () { handlePillEnter(idx); }}
                       onMouseLeave={handlePillLeave}
                     >
-                      {/* The pill */}
                       <div
-                        className={`
-                          flex items-center gap-3 px-4 py-3.5 rounded-2xl
-                          border-2 cursor-pointer
-                          transition-all duration-300 ease-out
-                          ${isHovered
-                            ? 'shadow-lg border-opacity-60'
-                            : 'shadow-sm hover:shadow-md border-opacity-20'
-                          }
-                        `}
+                        className={'flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 cursor-pointer transition-all duration-300 ease-out ' + (isHovered ? 'shadow-lg border-opacity-60' : 'shadow-sm hover:shadow-md border-opacity-20')}
                         style={{
-                          backgroundColor: `${lesson.color}${isInactive ? '05' : '08'}`,
-                          borderColor: isHovered ? lesson.color : `${lesson.color}${isInactive ? '15' : '30'}`,
+                          backgroundColor: lesson.color + (isInactive ? '05' : '08'),
+                          borderColor: isHovered ? lesson.color : lesson.color + (isInactive ? '15' : '30'),
                           opacity: isInactive ? 0.5 : 1,
                         }}
                       >
                         <div
                           className="w-1.5 h-10 rounded-full shrink-0 transition-all duration-300"
-                          style={{
-                            backgroundColor: lesson.color,
-                            opacity: isHovered ? 1 : 0.6,
-                          }}
+                          style={{ backgroundColor: lesson.color, opacity: isHovered ? 1 : 0.6 }}
                         />
                         <div className="min-w-0 flex-1">
                           <p
@@ -432,69 +423,61 @@ export default function HomePage({
                           </p>
                           {!isInactive && (
                             <p className="text-xs text-navy/35 mt-0.5">
-                              {formatTime(lesson.startTime)} – {formatTime(lesson.endTime)}
-                              <span className="mx-1.5 text-navy/15">·</span>
+                              {formatTime(lesson.startTime)} &ndash; {formatTime(lesson.endTime)}
+                              <span className="mx-1.5 text-navy/15">&middot;</span>
                               {lesson.period}
                             </p>
                           )}
                         </div>
-                        {!isInactive && lesson.sequenceLesson?.title && (
-                          <div
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: lesson.color }}
-                            title="Lesson planned"
-                          />
+                        {!isInactive && lesson.sequenceLesson && lesson.sequenceLesson.title && (
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lesson.color }} title="Lesson planned" />
                         )}
                       </div>
 
                       {/* Prediction bridge */}
                       {isHovered && (
-                        <div
-                          className="absolute top-0 bottom-0 left-full"
-                          style={{ width: 'calc(100vw - 100%)' }}
-                        />
+                        <div className="absolute top-0 bottom-0 left-full" style={{ width: 'calc(100vw - 100%)' }} />
                       )}
                     </div>
                   );
                 })}
 
-                {/* Today's tasks summary */}
-                {todayTodos.length > 0 && (
+                {/* Unscheduled tasks */}
+                {unscheduledTodos.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
                     <p className="text-xs font-semibold text-navy/25 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <CheckSquare size={12} />
-                      Tasks today
+                      Unscheduled tasks
                     </p>
-                    {todayTodos.slice(0, 3).map((todo) => (
-                      <div key={todo.id} className="flex items-center gap-2 py-1.5 text-sm text-navy/40">
-                        <div className="w-1 h-1 rounded-full bg-sage/40" />
-                        <span className="truncate">{todo.title}</span>
-                      </div>
-                    ))}
-                    {todayTodos.length > 3 && (
-                      <p className="text-xs text-navy/25 mt-1">
-                        +{todayTodos.length - 3} more
-                      </p>
-                    )}
+                    {unscheduledTodos.map(function (todo) {
+                      return (
+                        <div key={todo.id} className="flex items-center gap-2 py-1.5 text-sm text-navy/40">
+                          <div className="w-1.5 h-1.5 rounded-full bg-sage/30 shrink-0" />
+                          <span className="truncate">{todo.text}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
               {/* RIGHT: Info panel */}
-              <div
-                className="flex-1 min-w-0 pl-4 relative"
-                onMouseEnter={handlePanelEnter}
-                onMouseLeave={handlePanelLeave}
-              >
-                {hoveredLesson !== null && allItems[hoveredLesson]?.type === 'lesson' && (
-                  <InfoPanel
-                    lesson={allItems[hoveredLesson].data}
-                    timetableData={timetableData}
-                  />
+              <div className="flex-1 min-w-0 pl-4 relative">
+                {hoveredLesson !== null && allItems[hoveredLesson] && allItems[hoveredLesson].type === 'lesson' && (
+                  <div
+                    onMouseEnter={handlePanelEnter}
+                    onMouseLeave={handlePanelLeave}
+                    className="inline-block w-full"
+                  >
+                    <InfoPanel
+                      lesson={allItems[hoveredLesson].data}
+                      timetableData={timetableData}
+                      isDismissing={isDismissing}
+                    />
+                  </div>
                 )}
 
-                {/* Empty state when nothing hovered */}
-                {hoveredLesson === null && enrichedLessons.length > 0 && (
+                {hoveredLesson === null && !isDismissing && enrichedLessons.length > 0 && (
                   <div className="flex items-center justify-center h-64 rounded-2xl border-2 border-dashed border-slate-100">
                     <p className="text-navy/15 text-sm">Hover over a lesson for details</p>
                   </div>
@@ -509,42 +492,31 @@ export default function HomePage({
 }
 
 // ===== Info Panel =====
-// Appears on the right when a lesson pill is hovered.
-// Simple fade-in animation, no blur effects.
 
-function InfoPanel({ lesson, timetableData }) {
-  const seq = lesson.sequenceLesson;
-  const classInfo = lesson.classInfo;
-  const hasContent = seq && (seq.title || seq.notes || (seq.links && seq.links.length > 0));
+function InfoPanel({ lesson, timetableData, isDismissing }) {
+  var seq = lesson.sequenceLesson;
+  var classInfo = lesson.classInfo;
+  var hasContent = seq && (seq.title || seq.notes || (seq.links && seq.links.length > 0));
 
   return (
-    <div className="info-panel-appear">
-      <div
-        className="rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm"
-      >
-        {/* Header bar: class + metadata — compact */}
-        <div
-          className="px-5 py-3 flex items-center justify-between"
-          style={{ backgroundColor: `${lesson.color}0D` }}
-        >
+    <div className={isDismissing ? 'info-panel-dismiss' : 'info-panel-appear'}>
+      <div className="rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm">
+        {/* Header bar */}
+        <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: lesson.color + '0D' }}>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-serif text-sm font-bold" style={{ color: lesson.color }}>
-              {lesson.className}
-            </span>
-            <span className="text-xs text-navy/30">
-              {classInfo?.subject || lesson.subject}
-            </span>
+            <span className="font-serif text-sm font-bold" style={{ color: lesson.color }}>{lesson.className}</span>
+            <span className="text-xs text-navy/30">{(classInfo && classInfo.subject) || lesson.subject}</span>
           </div>
           <div className="flex items-center gap-3 text-xs text-navy/35 shrink-0">
             <span className="flex items-center gap-1">
               <Clock size={11} className="text-navy/25" />
-              {formatTime(lesson.startTime)}–{formatTime(lesson.endTime)}
+              {formatTime(lesson.startTime)}&ndash;{formatTime(lesson.endTime)}
             </span>
             <span className="flex items-center gap-1">
               <MapPin size={11} className="text-navy/25" />
-              {lesson.room || '—'}
+              {lesson.room || '\u2014'}
             </span>
-            {classInfo?.classSize && (
+            {classInfo && classInfo.classSize && (
               <span className="flex items-center gap-1">
                 <Users size={11} className="text-navy/25" />
                 {classInfo.classSize}
@@ -557,79 +529,60 @@ function InfoPanel({ lesson, timetableData }) {
         <div className="px-5 py-4">
           {hasContent ? (
             <div className="space-y-4">
-              {/* LESSON TITLE — the hero */}
               {seq.title && (
                 <div>
                   {seq.topicName && (
                     <div className="flex items-center gap-1.5 mb-1">
                       <FolderOpen size={12} className="text-navy/20" />
-                      <span className="text-[11px] font-medium text-navy/30 uppercase tracking-wider">
-                        {seq.topicName}
-                      </span>
+                      <span className="text-[11px] font-medium text-navy/30 uppercase tracking-wider">{seq.topicName}</span>
                     </div>
                   )}
-                  <h2 className="font-serif text-2xl font-bold text-navy leading-snug">
-                    {seq.title}
-                  </h2>
+                  <h2 className="font-serif text-2xl font-bold text-navy leading-snug">{seq.title}</h2>
                 </div>
               )}
 
-              {/* NOTES */}
               {seq.notes && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <StickyNote size={12} className="text-navy/20" />
                     <span className="text-[11px] font-semibold text-navy/25 uppercase tracking-wider">Notes</span>
                   </div>
-                  <p className="text-sm text-navy/60 whitespace-pre-wrap leading-relaxed">
-                    {seq.notes}
-                  </p>
+                  <p className="text-sm text-navy/60 whitespace-pre-wrap leading-relaxed">{seq.notes}</p>
                 </div>
               )}
 
-              {/* LINKS */}
               {seq.links && seq.links.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Link2 size={12} className="text-navy/20" />
-                    <span className="text-[11px] font-semibold text-navy/25 uppercase tracking-wider">
-                      Resources
-                    </span>
+                    <span className="text-[11px] font-semibold text-navy/25 uppercase tracking-wider">Resources</span>
                   </div>
                   <div className="space-y-1.5">
-                    {seq.links.map((link, i) => (
-                      <a
-                        key={i}
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-sand/40 border border-sand/60
-                                   hover:bg-[#81B29A]/8 hover:border-sage/20
-                                   transition-smooth group"
-                      >
-                        <div
-                          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                          style={{ backgroundColor: `${lesson.color}15` }}
+                    {seq.links.map(function (link, i) {
+                      return (
+                        <a
+                          key={i}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-sand/40 border border-sand/60 hover:bg-[#81B29A]/8 hover:border-sage/20 transition-smooth group"
                         >
-                          <ExternalLink size={13} style={{ color: lesson.color }} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-navy group-hover:text-sage transition-colors truncate">
-                            {link.label || 'Open link'}
-                          </p>
-                          <p className="text-[11px] text-navy/20 truncate">
-                            {link.url}
-                          </p>
-                        </div>
-                        <ChevronRight size={13} className="text-navy/10 group-hover:text-sage/40 shrink-0 transition-colors" />
-                      </a>
-                    ))}
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: lesson.color + '15' }}>
+                            <ExternalLink size={13} style={{ color: lesson.color }} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-navy group-hover:text-sage transition-colors truncate">{link.label || 'Open link'}</p>
+                            <p className="text-[11px] text-navy/20 truncate">{link.url}</p>
+                          </div>
+                          <ChevronRight size={13} className="text-navy/10 group-hover:text-sage/40 shrink-0 transition-colors" />
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Class notes */}
-              {classInfo?.notes && (
+              {classInfo && classInfo.notes && (
                 <div className="pt-3 border-t border-slate-100">
                   <p className="text-xs text-navy/25 italic leading-relaxed">
                     <span className="text-navy/35 font-medium not-italic">Class note:</span> {classInfo.notes}
@@ -639,7 +592,7 @@ function InfoPanel({ lesson, timetableData }) {
             </div>
           ) : (
             <div className="py-4 text-center">
-              <p className="text-sm text-navy/25 italic">No lesson details yet — add them in Class View</p>
+              <p className="text-sm text-navy/25 italic">No lesson details yet &mdash; add them in Class View</p>
             </div>
           )}
         </div>
