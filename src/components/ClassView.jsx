@@ -25,10 +25,13 @@ import {
   Unlink,
   Link as LinkIcon,
   Check,
+  ClipboardCheck, 
+  Printer,
 } from 'lucide-react';
 import { getClassColor, generateTimetableOccurrences } from '../utils/timetable';
 import { formatTime, formatDateISO, MONTH_NAMES_SHORT, DAY_NAMES_SHORT } from '../utils/dateHelpers';
 import { getClassSchedule } from '../utils/storage';
+
 
 // ===== ClassView =====
 // Left panel: class list. Right panel: class info + lesson sequence management.
@@ -527,6 +530,20 @@ function LessonSequenceRow({
           )}
         </div>
 
+        {/* Status icons */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <ClipboardCheck
+            size={12}
+            className={lesson.fullyPlanned ? 'text-sage' : 'text-navy/15'}
+            strokeWidth={lesson.fullyPlanned ? 2.5 : 1.5}
+          />
+          <Printer
+            size={12}
+            className={lesson.allPrinted ? 'text-sage' : 'text-navy/15'}
+            strokeWidth={lesson.allPrinted ? 2.5 : 1.5}
+          />
+        </div>
+
         {/* Scheduled date + time pill + sync button */}
         <div className="flex items-center gap-1.5 shrink-0">
           {scheduledOccurrence ? (
@@ -619,6 +636,38 @@ function LessonSequenceRow({
               placeholder="Lesson title…"
               className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-navy
                          placeholder:text-navy/20 focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20" />
+          </div>
+
+          {/* Status toggles */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdate(lesson.id, { fullyPlanned: !lesson.fullyPlanned });
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                lesson.fullyPlanned
+                  ? 'bg-sage/15 text-sage border border-sage/30'
+                  : 'bg-slate-50 text-navy/30 border border-slate-200 hover:border-sage/30 hover:text-navy/50'
+              }`}
+            >
+              <ClipboardCheck size={13} strokeWidth={lesson.fullyPlanned ? 2.5 : 1.5} />
+              {lesson.fullyPlanned ? 'Fully Planned' : 'Mark Planned'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdate(lesson.id, { allPrinted: !lesson.allPrinted });
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                lesson.allPrinted
+                  ? 'bg-sage/15 text-sage border border-sage/30'
+                  : 'bg-slate-50 text-navy/30 border border-slate-200 hover:border-sage/30 hover:text-navy/50'
+              }`}
+            >
+              <Printer size={13} strokeWidth={lesson.allPrinted ? 2.5 : 1.5} />
+              {lesson.allPrinted ? 'All Printed' : 'Mark Printed'}
+            </button>
           </div>
 
           {/* Notes */}
