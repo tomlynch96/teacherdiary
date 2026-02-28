@@ -81,12 +81,10 @@ export default function LessonPanel({
   // Save a field — creates a new lesson in the sequence if needed
   const saveField = (field, value) => {
     if (currentLessonId) {
-      // Update existing lesson
       onUpdateLesson(lesson.classId, currentLessonId, { [field]: value });
     } else {
-      // Create new lesson in sequence
-      const newData = { title, notes, links, fullyPlanned, allPrinted, [field]: value };
-      const newLesson = onAddLesson(lesson.classId, newData);
+      const newData = { title, notes, links, [field]: value };
+      const newLesson = onAddLesson(lesson.classId, newData, occurrenceNum);
       if (newLesson) {
         setCurrentLessonId(newLesson.id);
       }

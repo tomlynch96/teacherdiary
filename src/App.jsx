@@ -96,9 +96,18 @@ export default function App() {
     setLessonSequencesState(getLessonSequences());
   };
 
-  const handleAddLesson = (classId, data) => {
-    addLessonToSequence(classId, data);
+  const handleAddLesson = (classId, data, targetOccurrenceNum) => {
+    // When called from LessonPanel with a specific occurrence number,
+    // calculate the correct order value so the lesson maps to that slot.
+    // order = occurrenceNum - startIndex (can be negative, that's fine)
+    if (targetOccurrenceNum !== undefined && targetOccurrenceNum !== null) {
+      const schedule = getClassSchedule(classId);
+      data = { ...data, order: targetOccurrenceNum - schedule.startIndex };
+    }
+
+    const newLesson = addLessonToSequence(classId, data);
     setLessonSequencesState(getLessonSequences());
+    return newLesson;
   };
 
   const handleDeleteLesson = (classId, lessonId) => {
